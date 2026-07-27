@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Emond Sacha — Motion Designer &amp; Directeur artistique</title>
+<meta name="description" content="Portfolio de Emond Sacha, Motion Designer et Directeur artistique.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css?v=2">
+</head>
+<body>
+
+<div class="page-transition" id="pageTransition"><span></span><span></span><span></span><span></span><span></span></div>
+
+<div class="grain"></div>
+<div class="cursor-dot" id="cursorDot"></div>
+
+<header class="site-header">
+  <a href="#accueil" class="logo">EMOND<span>SACHA</span></a>
+  <nav class="nav" id="nav">
+    <a href="#accueil" class="nav-link">Accueil</a>
+    <a href="#projets" class="nav-link">Projets</a>
+    <a href="#apropos" class="nav-link">À propos</a>
+    <a href="#contact" class="nav-link nav-cta">Demande de devis</a>
+  </nav>
+  <button class="burger" id="burger" aria-label="Menu">
+    <span></span><span></span><span></span>
+  </button>
+</header>
+
+<main>
+
+  <!-- ACCUEIL -->
+  <section id="accueil" class="hero">
+    <div class="hero-title">
+      <h1 class="reveal">
+        <span class="line">MOTION</span>
+        <span class="line outline">DESIGN</span>
+        <span class="line">&amp; DA</span>
+      </h1>
+    </div>
+    <div class="marquee">
+      <div class="marquee-track">
+        <span>EMOND SACHA — MOTION DESIGNER — DIRECTEUR ARTISTIQUE — </span>
+        <span>EMOND SACHA — MOTION DESIGNER — DIRECTEUR ARTISTIQUE — </span>
+        <span>EMOND SACHA — MOTION DESIGNER — DIRECTEUR ARTISTIQUE — </span>
+        <span>EMOND SACHA — MOTION DESIGNER — DIRECTEUR ARTISTIQUE — </span>
+      </div>
+    </div>
+    <div class="showreel">
+      <div class="showreel-tag">
+        <span class="section-number">SHOWREEL</span>
+        <span class="showreel-duration" id="showreelDuration"></span>
+      </div>
+      <div class="showreel-frame" id="showreelFrame">
+        <video
+          id="showreelVideo"
+          src="assets/showreel-web.mp4"
+          poster="assets/showreel-poster.jpg"
+          playsinline
+          preload="metadata"
+        ></video>
+        <button class="showreel-play" id="showreelPlay" aria-label="Lire le showreel">
+          <span class="play-icon"></span>
+        </button>
+        <div class="showreel-scrub" id="showreelScrub">
+          <div class="showreel-scrub-fill" id="showreelScrubFill"></div>
+          <div class="showreel-scrub-handle" id="showreelScrubHandle"></div>
+        </div>
+      </div>
+    </div>
+
+    <a href="#projets" class="scroll-cue">
+      <span>Voir les projets</span>
+      <span class="scroll-arrow">↓</span>
+    </a>
+  </section>
+
+  <!-- PROJETS -->
+  <section id="projets" class="projects">
+    <div class="section-head">
+      <span class="section-number">01</span>
+      <h2>Projets sélectionnés</h2>
+    </div>
+
+    <div class="project-grid">
+
+      <a href="projects/views.html" class="project-card-link" data-transition>
+      <article class="project-card project-card--video">
+        <div class="project-visual project-visual--video">
+          <video
+            src="assets/projects/views-preview.mp4"
+            poster="assets/projects/views-poster.jpg"
+            autoplay muted loop playsinline preload="none"
+          ></video>
+          <span class="project-index">01</span>
+        </div>
+        <div class="project-info">
+          <h3>Views</h3>
+          <p>Animation — Procreate / Premiere / AE</p>
+        </div>
+      </article>
+      </a>
+
+      <a href="projects/evagum.html" class="project-card-link" data-transition>
+      <article class="project-card project-card--video">
+        <div class="project-visual project-visual--video">
+          <video
+            src="assets/projects/evagum-preview.mp4"
+            poster="assets/projects/evagum-poster.jpg"
+            autoplay muted loop playsinline preload="none"
+          ></video>
+          <span class="project-index">02</span>
+        </div>
+        <div class="project-info">
+          <h3>Evagum</h3>
+          <p>Réalisation / Montage — Court-métrage</p>
+        </div>
+      </article>
+      </a>
+
+      <a href="projects/arcteryx.html" class="project-card-link" data-transition>
+      <article class="project-card project-card--video">
+        <div class="project-visual project-visual--video">
+          <video
+            src="assets/projects/arcteryx-preview.mp4"
+            poster="assets/projects/arcteryx-poster.jpg"
+            autoplay muted loop playsinline preload="none"
+          ></video>
+          <span class="project-index">03</span>
+        </div>
+        <div class="project-info">
+          <h3>Arc'téryx</h3>
+          <p>Motion / IA — Spot publicitaire</p>
+        </div>
+      </article>
+      </a>
+
+      <a href="projects/grunt.html" class="project-card-link" data-transition>
+      <article class="project-card project-card--video">
+        <div class="project-visual project-visual--video">
+          <video
+            src="assets/projects/grunt-preview.mp4"
+            poster="assets/projects/grunt-poster.jpg"
+            autoplay muted loop playsinline preload="none"
+          ></video>
+          <span class="project-index">04</span>
+        </div>
+        <div class="project-info">
+          <h3>Grünt</h3>
+          <p>Motion Design — Média</p>
+        </div>
+      </article>
+      </a>
+
+      <a href="projects/union-nationale-des-fleuristes.html" class="project-card-link" data-transition>
+      <article class="project-card project-card--video">
+        <div class="project-visual project-visual--carousel">
+          <img src="assets/projects/unf-stickers-mockup.jpg" alt="Union Nationale des Fleuristes — mockup stickers" class="carousel-img active">
+          <img src="assets/projects/unf-posters-mockup.jpg" alt="Union Nationale des Fleuristes — posters et carte de vœux" class="carousel-img">
+          <span class="project-index">05</span>
+        </div>
+        <div class="project-info">
+          <h3>Union Nationale des Fleuristes</h3>
+          <p>Direction artistique — Alternance</p>
+        </div>
+      </article>
+      </a>
+
+      <a href="projects/blobtrack.html" class="project-card-link" data-transition>
+      <article class="project-card project-card--video">
+        <div class="project-visual project-visual--video">
+          <video
+            src="assets/projects/blobtrack-preview.mp4"
+            poster="assets/projects/blobtrack-poster.jpg"
+            autoplay muted loop playsinline preload="none"
+          ></video>
+          <span class="project-index">06</span>
+        </div>
+        <div class="project-info">
+          <h3>BlobTrack</h3>
+          <p>TouchDesigner — Interactivité live</p>
+        </div>
+      </article>
+      </a>
+
+    </div>
+  </section>
+
+  <!-- A PROPOS -->
+  <section id="apropos" class="about">
+    <div class="section-head">
+      <span class="section-number">02</span>
+      <h2>À propos</h2>
+    </div>
+
+    <div class="about-grid about-grid--full">
+      <div class="about-content">
+        <p class="about-lead">Je m'appelle Sacha. Motion Designer &amp; Directeur artistique, je donne du mouvement et une identité forte à des projets visuels — de l'idée à la livraison finale.</p>
+        <p>Diplômé d'un master en Direction artistique &amp; Motion Design, je travaille principalement sur des formats audiovisuels, tout en gardant un pied dans le print et le fixe. Mon parcours en alternance et en stage m'a fait évoluer aussi bien en start-up que dans une structure plus classique, deux environnements qui m'ont appris à adapter ma façon de travailler selon le contexte. En parallèle, je continue à réaliser des courts-métrages de mon côté, par envie de raconter des histoires au-delà des projets de commande.</p>
+
+        <div class="skills-marquee">
+          <div class="skills-track">
+            <span class="skill-tag">After Effects</span>
+            <span class="skill-tag">Cinema 4D</span>
+            <span class="skill-tag">Blender</span>
+            <span class="skill-tag">Direction artistique</span>
+            <span class="skill-tag">Identité visuelle</span>
+            <span class="skill-tag">Réalisation</span>
+            <span class="skill-tag">After Effects</span>
+            <span class="skill-tag">Cinema 4D</span>
+            <span class="skill-tag">Blender</span>
+            <span class="skill-tag">Direction artistique</span>
+            <span class="skill-tag">Identité visuelle</span>
+            <span class="skill-tag">Réalisation</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONTACT / DEVIS -->
+  <section id="contact" class="contact">
+    <div class="section-head">
+      <span class="section-number">03</span>
+      <h2>Demande de devis</h2>
+    </div>
+
+    <div class="contact-grid">
+      <div class="contact-intro">
+        <p class="contact-lead">Un projet en tête ? Parlons-en.</p>
+        <p>Décris-moi ton besoin, je reviens vers toi rapidement avec une proposition adaptée.</p>
+        <a href="mailto:emond.sachapro@gmail.com" class="contact-email">emond.sachapro@gmail.com</a>
+      </div>
+
+      <form class="quote-form" id="quoteForm">
+        <div class="form-row">
+          <label for="name">Nom</label>
+          <input type="text" id="name" name="name" required>
+        </div>
+        <div class="form-row">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" required>
+        </div>
+        <div class="form-row">
+          <label for="type">Type de projet</label>
+          <input type="text" id="type" name="type" placeholder="Motion design, 3D, réalisation...">
+        </div>
+        <div class="form-row">
+          <label for="budget">Budget estimé</label>
+          <input type="text" id="budget" name="budget" placeholder="Optionnel">
+        </div>
+        <div class="form-row">
+          <label for="message">Détails du projet</label>
+          <textarea id="message" name="message" rows="5" required></textarea>
+        </div>
+        <button type="submit" class="submit-btn">Envoyer la demande</button>
+      </form>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <span>© <span id="year"></span> Emond Sacha</span>
+  <span class="footer-tagline">Motion Designer, Directeur artistique</span>
+</footer>
+
+<script src="script.js?v=2"></script>
+</body>
+</html>
