@@ -81,6 +81,12 @@ const STAGES = [
   { id:5, name:"Laugh Tale", req:220, danger:7 }
 ];
 
+const ISLANDS = {
+  0: ["Fuchsia Village","Shells Town","Orange Town","Syrup Village","Baratie","Loguetown","Cocoyasi"],
+  2: ["Whiskey Peak","Little Garden","Drum Island","Alabasta","Skypiea","Water Seven","Enies Lobby","Thriller Bark"],
+  4: ["Fishman Island","Punk Hazard","Dressrosa","Zou","Whole Cake Island","Wano","Elbaf"]
+};
+
 const EPITHETS = [
   "le Tempétueux","aux Mille Cicatrices","le Silencieux","l'Insaisissable",
   "Cœur de Fer","le Vagabond","aux Yeux d'Orage","le Fléau des Mers",
@@ -160,6 +166,326 @@ const DEATH_CAUSES = {
   drowning: "Emporté·e par les flots, ton pouvoir de fruit du démon ne t'a pas pardonné."
 };
 
+const SPECIAL_EVENTS = [
+  {
+    id:"onigashima",
+    title:"La guerre d'Onigashima",
+    condition:()=> state.stage===4 && state.island==="Wano" && state.age>=18 &&
+      (state.hakiObs>0 || state.hakiArm>0) && ["pirate","marine","revolutionnaire"].includes(state.path),
+    text:"Un déferlement de flammes et de cris embrase le ciel de Wano : la bataille d'Onigashima vient d'éclater entre les forces de Kaido et une coalition de rebelles. Voulez-vous la rejoindre ?",
+    choices:[
+      { label:"Rejoindre la coalition contre Kaido", sub:"Risque très élevé, gloire immense en cas de victoire",
+        resolve(){
+          const enemyPower = rand(180,260);
+          const winProb = clamp(0.35 + (powerScore()-enemyPower)/220, 0.05, 0.85);
+          if(Math.random()<winProb){
+            const gain = rand(15000,40000);
+            if(state.path==="pirate") state.bounty += gain;
+            state.beli += Math.round(gain/3);
+            state.happiness = clamp(state.happiness+15,0,100);
+            if(!state.hakiConq && Math.random()<0.25){
+              state.hakiConq = true;
+              addLog("Une pression titanesque explose en toi en pleine bataille : le Haki des Rois s'éveille !", "major");
+            }
+            addLog("Tu combats aux côtés des rebelles et contribues à la chute de Kaido. Ton nom résonnera dans tout Wano.", "good");
+          } else {
+            state.health = clamp(state.health - rand(35,60), 0, 100);
+            addLog("La bataille est d'une violence inouïe. Tu t'en sors à peine vivant·e.", "bad");
+            if(state.health<=0 || Math.random()<0.12) death("battle");
+          }
+        }
+      },
+      { label:"Observer à distance, hors de danger", sub:"Prudent, mais tu rates ta chance de gloire",
+        resolve(){
+          state.happiness = clamp(state.happiness-6,0,100);
+          addLog("Tu regardes le ciel s'embraser depuis un lieu sûr, le cœur lourd de ne pas y participer.", "neutral");
+        }
+      }
+    ]
+  },
+  {
+    id:"marineford",
+    title:"Guerre au sommet",
+    condition:()=> state.stage>=2 && state.age>=18 && state.age<=50 &&
+      ((state.path==="pirate" && state.bounty>50000) || (state.path==="marine" && state.marineRank>=2)),
+    text:"La nouvelle tombe comme un couperet : une guerre au sommet éclate à Marineford entre la Marine et les forces d'un Empereur.",
+    choices:[
+      { label:"Te jeter dans la bataille", sub:"Un affrontement historique",
+        resolve(){
+          const enemyPower = rand(150,220);
+          const winProb = clamp(0.4 + (powerScore()-enemyPower)/200, 0.1, 0.85);
+          if(Math.random()<winProb){
+            if(state.path==="pirate"){
+              state.bounty += rand(10000,30000);
+              addLog("Tu marques les esprits en tenant tête à des vice-amiraux. Ta prime s'envole.", "good");
+            } else {
+              state.marineRank = Math.min(MARINE_RANKS.length-1, state.marineRank+1);
+              addLog(`Ta bravoure au front te vaut une promotion immédiate : ${MARINE_RANKS[state.marineRank]} !`, "major");
+            }
+            state.happiness = clamp(state.happiness+10,0,100);
+          } else {
+            state.health = clamp(state.health - rand(30,55), 0, 100);
+            addLog("Tu es pris·e dans la tourmente et ressors gravement blessé·e du champ de bataille.", "bad");
+            if(state.health<=0 || Math.random()<0.15) death("battle");
+          }
+        }
+      },
+      { label:"Te tenir à l'écart du chaos", sub:"La prudence avant tout",
+        resolve(){
+          state.happiness = clamp(state.happiness-5,0,100);
+          addLog("Tu choisis de ne pas te mêler à cette guerre qui ne te concerne pas directement.", "neutral");
+        }
+      }
+    ]
+  },
+  {
+    id:"alabasta_rebellion",
+    title:"Rébellion à Alabasta",
+    condition:()=> state.stage===2 && state.island==="Alabasta" && state.age>=16 && (state.path==="pirate" || state.path==="revolutionnaire"),
+    text:"Le royaume d'Alabasta est au bord de la guerre civile : une organisation criminelle manipule la rébellion dans l'ombre.",
+    choices:[
+      { label:"Aider la famille royale à rétablir la paix", sub:"Combat contre les agitateurs",
+        resolve(){
+          const enemyPower = rand(40,70);
+          if(Math.random()<clamp(0.5+(powerScore()-enemyPower)/180,0.15,0.9)){
+            state.charisme = clamp(state.charisme+4,0,100);
+            state.beli += rand(2000,5000);
+            addLog("Grâce à toi, la guerre civile est évitée de justesse. Le peuple d'Alabasta te salue en héros.", "good");
+          } else {
+            state.health = clamp(state.health - rand(15,30), 0, 100);
+            addLog("Tu es blessé·e en affrontant les meneurs de la rébellion.", "bad");
+          }
+        }
+      },
+      { label:"Ne pas s'en mêler", sub:"Ce n'est pas ton combat",
+        resolve(){ addLog("Tu laisses Alabasta régler ses affaires seule et poursuis ta route.", "neutral"); }
+      }
+    ]
+  },
+  {
+    id:"skypiea_trial",
+    title:"L'épreuve de la Cloche d'Or",
+    condition:()=> state.stage===2 && state.island==="Skypiea" && (state.force+state.vitesse)>=40,
+    text:"Les prêtres de Skypiea te mettent au défi de sonner la Cloche d'Or, tout en haut du Giant Jack.",
+    choices:[
+      { label:"Relever le défi", sub:"Épreuve de force et d'agilité",
+        resolve(){
+          const score = state.force + state.vitesse + rand(-15,15);
+          if(score>=55){
+            state.beli += rand(3000,8000);
+            state.happiness = clamp(state.happiness+12,0,100);
+            if(!state.epithet){
+              state.epithet = pick(EPITHETS);
+              addLog(`Ton exploit résonne jusqu'en bas : on te surnomme désormais "${state.epithet}".`, "major");
+            }
+            addLog("La Cloche d'Or résonne dans tout le ciel ! Ton exploit devient une légende.", "good");
+          } else {
+            state.health = clamp(state.health - rand(10,20), 0, 100);
+            addLog("Tu chutes avant d'atteindre la cloche. Douloureux, mais tu t'en sors.", "bad");
+          }
+        }
+      },
+      { label:"Décliner poliment", sub:"",
+        resolve(){ addLog("Tu préfères ne pas tenter le sort et poursuis ton exploration de l'île céleste.", "neutral"); }
+      }
+    ]
+  },
+  {
+    id:"fishman_tension",
+    title:"Tensions à Fishman Island",
+    condition:()=> state.stage>=3 && state.island==="Fishman Island",
+    text:"Tu es témoin de vives tensions entre humains et hommes-poissons, exacerbées par des décennies de discrimination.",
+    choices:[
+      { label:"Prendre position pour l'égalité", sub:"",
+        resolve(){
+          state.charisme = clamp(state.charisme+3,0,100);
+          if(state.path==="marine") state.repMarine -= 5;
+          state.repPirate += 3;
+          addLog("Ton discours marque les esprits et apaise un peu les tensions.", "good");
+        }
+      },
+      { label:"Rester en retrait", sub:"",
+        resolve(){ addLog("Tu préfères ne pas t'immiscer dans un conflit qui te dépasse.", "neutral"); }
+      }
+    ]
+  },
+  {
+    id:"whole_cake_wedding",
+    title:"Le piège du mariage",
+    condition:()=> state.stage===4 && state.island==="Whole Cake Island" && state.path==="pirate",
+    text:"Tu reçois une invitation somptueuse à un mariage organisé par une Impératrice de la piraterie. L'odeur du sucre... et du piège... flotte dans l'air.",
+    choices:[
+      { label:"Accepter, quitte à foncer dans le piège", sub:"Risque élevé",
+        resolve(){
+          const enemyPower = rand(120,180);
+          if(Math.random()<clamp(0.4+(powerScore()-enemyPower)/200,0.1,0.8)){
+            state.bounty += rand(8000,20000);
+            addLog("Tu déjoues le piège et humilies l'Impératrice devant tout son clan. Ta prime explose.", "good");
+          } else {
+            state.health = clamp(state.health - rand(25,45), 0, 100);
+            if(state.crew.length && Math.random()<0.3){
+              const lost = state.crew.pop();
+              addLog(`${lost.name} est capturé·e dans la confusion...`, "death");
+            }
+            addLog("Le piège se referme sur toi. Tu t'échappes de justesse, blessé·e.", "bad");
+            if(state.health<=0) death("battle");
+          }
+        }
+      },
+      { label:"Décliner et fuir discrètement", sub:"",
+        resolve(){ addLog("Tu flaires le piège à temps et lèves l'ancre avant la cérémonie.", "neutral"); }
+      }
+    ]
+  },
+  {
+    id:"dressrosa_liberation",
+    title:"La libération de Dressrosa",
+    condition:()=> state.stage===4 && state.island==="Dressrosa" && (state.path==="pirate" || state.path==="revolutionnaire") && state.charisme>=25,
+    text:"À Dressrosa, un roi tyrannique transforme ses opposants politiques en jouets vivants depuis des années.",
+    choices:[
+      { label:"Aider à libérer le royaume", sub:"Grand combat, grande cause",
+        resolve(){
+          const enemyPower = rand(100,160);
+          if(Math.random()<clamp(0.45+(powerScore()-enemyPower)/200,0.15,0.85)){
+            state.charisme = clamp(state.charisme+6,0,100);
+            if(state.path==="pirate") state.bounty += rand(6000,15000);
+            addLog("Le royaume est libéré ! Les habitants, rendus à leur forme humaine, célèbrent ton nom.", "good");
+          } else {
+            state.health = clamp(state.health - rand(20,35), 0, 100);
+            addLog("Le combat contre les hommes de main du roi tourne mal pour toi.", "bad");
+            if(state.health<=0) death("battle");
+          }
+        }
+      },
+      { label:"Passer ton chemin", sub:"",
+        resolve(){
+          state.happiness = clamp(state.happiness-4,0,100);
+          addLog("Tu quittes Dressrosa, hanté·e par les jouets aux regards vides.", "neutral");
+        }
+      }
+    ]
+  },
+  {
+    id:"marine_village_order",
+    title:"Un ordre controversé",
+    condition:()=> state.path==="marine" && state.age>=19 && state.marineRank>=1,
+    text:"Un supérieur t'ordonne de réprimer un village civil accusé, sans preuve solide, d'héberger des pirates.",
+    choices:[
+      { label:"Obéir aux ordres", sub:"Discipline avant tout",
+        resolve(){
+          if(Math.random()<0.4) state.marineRank = Math.min(MARINE_RANKS.length-1, state.marineRank+1);
+          state.happiness = clamp(state.happiness-10,0,100);
+          state.repPirate -= 8;
+          addLog("Tu exécutes les ordres. L'opération renforce ta position au sein de la hiérarchie, mais te laisse un goût amer.", "neutral");
+        }
+      },
+      { label:"Refuser et protéger les civils", sub:"Risque de cour martiale",
+        resolve(){
+          state.happiness = clamp(state.happiness+10,0,100);
+          if(Math.random()<0.3){
+            state.marineRank = Math.max(0, state.marineRank-1);
+            addLog("Ton refus te vaut un blâme sévère et une rétrogradation.", "bad");
+          } else {
+            addLog("Ton refus fait scandale, mais ton intégrité forcera plus tard le respect.", "good");
+          }
+        }
+      }
+    ]
+  },
+  {
+    id:"revolutionary_slaves",
+    title:"Mission d'infiltration",
+    condition:()=> state.path==="revolutionnaire" && state.stage>=3 && state.charisme>=30,
+    text:"L'Armée Révolutionnaire te confie une mission d'infiltration pour libérer des esclaves détenus par un noble influent.",
+    choices:[
+      { label:"Accepter la mission", sub:"Extrêmement risqué",
+        resolve(){
+          const enemyPower = rand(90,150);
+          if(Math.random()<clamp(0.4+(powerScore()-enemyPower)/190,0.1,0.85)){
+            state.charisme = clamp(state.charisme+8,0,100);
+            state.beli += rand(1000,3000);
+            addLog("La mission est un succès : des dizaines de personnes retrouvent leur liberté grâce à toi.", "good");
+          } else {
+            state.health = clamp(state.health - rand(25,40), 0, 100);
+            addLog("L'opération tourne mal, tu t'extrais de justesse d'une garde renforcée.", "bad");
+            if(state.health<=0 || Math.random()<0.1) death("execution");
+          }
+        }
+      },
+      { label:"Refuser, trop dangereux", sub:"",
+        resolve(){
+          state.happiness = clamp(state.happiness-5,0,100);
+          addLog("Tu déclines la mission. Un·e camarade s'en chargera à ta place.", "neutral");
+        }
+      }
+    ]
+  },
+  {
+    id:"road_poneglyph",
+    title:"Rumeur de Poneglyphe",
+    condition:()=> state.path==="pirate" && state.stage===4 && powerScore()>=150,
+    text:"Une rumeur insistante évoque la présence d'un Poneglyphe Route caché sur une île voisine, une clé vers Laugh Tale.",
+    choices:[
+      { label:"Partir à sa recherche", sub:"Long et incertain, mais précieux",
+        resolve(){
+          if(Math.random()<0.6){
+            state.flags.hasRoadPoneglyph = true;
+            addLog("Après des semaines de fouilles, tu mets la main sur le Poneglyphe Route ! Laugh Tale n'a jamais semblé aussi proche.", "major");
+          } else {
+            state.happiness = clamp(state.happiness-8,0,100);
+            addLog("Après des semaines de recherches infructueuses, tu rentres bredouille.", "bad");
+          }
+        }
+      },
+      { label:"Continuer ta route sans t'attarder", sub:"",
+        resolve(){ addLog("Tu laisses cette rumeur aux autres et poursuis ton chemin.", "neutral"); }
+      }
+    ]
+  }
+];
+
+let pendingSpecial = null;
+
+function findSpecialEvent(){
+  return SPECIAL_EVENTS.find(e => !state.flags[e.id] && e.condition());
+}
+
+function triggerSpecialEvent(ev){
+  state.flags[ev.id] = true;
+  pendingSpecial = ev;
+  addLog(ev.text, "major");
+  const html = ev.choices.map((c,i)=>`
+    <div class="action-row" data-choice="${i}">
+      <div><div class="a-label">${c.label}</div>${c.sub ? `<div class="a-sub">${c.sub}</div>` : ''}</div>
+      <div class="a-val">→</div>
+    </div>`).join("");
+  openModal(ev.title, html);
+  document.querySelectorAll("[data-choice]").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      resolveSpecialChoice(ev, +el.dataset.choice);
+    });
+  });
+  save();
+  renderGame(true);
+}
+
+function resolveSpecialChoice(ev, idx){
+  pendingSpecial = null;
+  ev.choices[idx].resolve();
+  checkDeath();
+  checkBountyReveal();
+  closeModal();
+  save();
+  renderGame(true);
+}
+
+function resolvePendingDefault(){
+  if(!pendingSpecial) return;
+  const ev = pendingSpecial;
+  const idx = ev.choices.length>1 ? ev.choices.length-1 : 0;
+  resolveSpecialChoice(ev, idx);
+}
+
 /* ================= STATE ================= */
 
 const SAVE_KEY = "opl_save_v1";
@@ -172,7 +498,8 @@ function freshState(){
     name:"", birthplace:"", familyId:"",
     age:0, year:0, alive:true,
     path:"civil", pathChosen:false,
-    stage:0,
+    stage:0, island:null,
+    flags:{},
     health:100, happiness:70,
     force:10, vitesse:10, endurance:10, intelligence:10, charisme:10, chance:10,
     hakiObs:0, hakiArm:0, hakiConq:false,
@@ -316,6 +643,7 @@ function birthCharacter(){
   state.name = nameInput || randomName();
   state.birthplace = createSel.birthplace;
   state.familyId = createSel.familyId;
+  state.island = createSel.birthplace;
 
   const fam = FAMILIES.find(f=>f.id===state.familyId);
   applyMods(fam.mods);
@@ -365,10 +693,23 @@ function ageUp(){
 }
 
 function runPathYear(){
+  const special = findSpecialEvent();
+  if(special){ triggerSpecialEvent(special); return; }
+
   const pool = pathEvents(state.path);
   const ev = pick(pool);
   applyMods(ev.mods);
   addLog(ev.txt, ev.type);
+
+  // navigation vers une autre île de la même région
+  const islandPool = ISLANDS[state.stage];
+  if(islandPool && islandPool.length>1 && Math.random()<0.22){
+    const others = islandPool.filter(i=>i!==state.island);
+    if(others.length){
+      state.island = pick(others);
+      addLog(`Après plusieurs jours de navigation, vous accostez à ${state.island}.`, "neutral");
+    }
+  }
 
   // marine promotion chance
   if(state.path==="marine" && state.marineRank < MARINE_RANKS.length-1){
@@ -393,7 +734,8 @@ function runPathYear(){
 
   // laugh tale victory check for pirates
   if(state.path==="pirate" && state.stage===5){
-    if(powerScore() >= 240 && Math.random() < 0.35){
+    const winChance = state.flags.hasRoadPoneglyph ? 0.6 : 0.35;
+    if(powerScore() >= 240 && Math.random() < winChance){
       winEnding("pirate");
     }
   }
@@ -680,7 +1022,10 @@ function openMap(){
       const id = +el.dataset.stage;
       if(id===state.stage+1 && p>=STAGES[id].req){
         state.stage = id;
-        addLog(`Tu arrives à ${STAGES[id].name}. Un nouveau chapitre commence.`, "major");
+        const pool = ISLANDS[id];
+        state.island = pool ? pick(pool) : STAGES[id].name;
+        const label = pool ? `${state.island}, dans ${STAGES[id].name}` : STAGES[id].name;
+        addLog(`Tu arrives à ${label}. Un nouveau chapitre commence.`, "major");
         closeModal();
         save(); renderGame(true);
       }
@@ -724,6 +1069,9 @@ function openStatus(){
       <div><div class="a-label">Voie</div><div class="a-sub">${pathLabel(state.path)}${state.path==='marine' ? ' — '+MARINE_RANKS[state.marineRank] : ''}</div></div>
     </div>
     <div class="action-row" style="cursor:default;">
+      <div><div class="a-label">Localisation</div><div class="a-sub">${state.island && state.island!==STAGES[state.stage].name ? state.island+' — '+STAGES[state.stage].name : STAGES[state.stage].name}</div></div>
+    </div>
+    <div class="action-row" style="cursor:default;">
       <div><div class="a-label">Haki</div><div class="a-sub">Observation ${state.hakiObs} · Armement ${state.hakiArm}${state.hakiConq?' · Rois ⚡':''}</div></div>
     </div>
     <div class="action-row" style="cursor:default;">
@@ -746,6 +1094,11 @@ function renderGame(scrollLog){
   document.getElementById("barHealth").style.width = state.health+"%";
   document.getElementById("barHappy").style.width = state.happiness+"%";
   document.getElementById("hudBeli").textContent = fmt(state.beli);
+
+  const locLabel = state.island && state.island !== STAGES[state.stage].name
+    ? `${state.island} — ${STAGES[state.stage].name}`
+    : STAGES[state.stage].name;
+  document.getElementById("hudLoc").textContent = "📍 " + locLabel;
 
   const bountyWrap = document.getElementById("hudBountyWrap");
   if(state.path==="pirate" && state.bountyRevealed){
@@ -829,9 +1182,13 @@ function wire(){
   document.getElementById("btnCrew").addEventListener("click", openCrewView);
   document.getElementById("btnStatus").addEventListener("click", openStatus);
 
-  document.getElementById("modalClose").addEventListener("click", closeModal);
+  document.getElementById("modalClose").addEventListener("click", ()=>{
+    if(pendingSpecial){ resolvePendingDefault(); } else { closeModal(); }
+  });
   document.getElementById("modalOverlay").addEventListener("click", (e)=>{
-    if(e.target.id==="modalOverlay") closeModal();
+    if(e.target.id==="modalOverlay"){
+      if(pendingSpecial){ resolvePendingDefault(); } else { closeModal(); }
+    }
   });
 
   const existing = loadSave();
