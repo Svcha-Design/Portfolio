@@ -435,6 +435,65 @@ const SPECIAL_EVENTS = [
   }
 ];
 
+const DISCOVERY_EVENTS = [
+  {
+    id:"haki_awaken",
+    condition:()=> state.hakiObs===0 && state.hakiArm===0 && state.force>=25,
+    resolve(){
+      if(Math.random()<0.5){
+        state.hakiObs = rand(8,15);
+        addLog("Une intuition fulgurante t'envahit en plein effort : tu perçois soudain les présences et intentions autour de toi. Le Haki de l'Observation s'éveille en toi !", "major");
+      } else {
+        state.hakiArm = rand(8,15);
+        addLog("Ton corps se durcit d'une force invisible en plein effort : le Haki de l'Armement s'éveille en toi !", "major");
+      }
+    }
+  },
+  {
+    id:"poneglyph_fragment",
+    condition:()=> state.stage>=1 && state.intelligence>=25,
+    resolve(){
+      state.flags.poneglyphFragments = (state.flags.poneglyphFragments||0) + 1;
+      const gain = rand(1500,4000);
+      state.beli += gain;
+      state.intelligence = clamp(state.intelligence+1,0,100);
+      addLog(`Tu découvres un fragment de Poneglyphe gravé d'une écriture ancienne. Son étude t'apporte ${fmt(gain)} Beli et de précieuses connaissances.`, "good");
+      if(!state.flags.hasRoadPoneglyph && state.flags.poneglyphFragments>=3){
+        state.flags.hasRoadPoneglyph = true;
+        addLog("En recoupant tes fragments, tu réalises qu'ils forment ensemble un Poneglyphe Route complet ! Laugh Tale n'a jamais semblé aussi proche.", "major");
+      }
+    }
+  },
+  {
+    id:"treasure_cache",
+    condition:()=> true,
+    resolve(){
+      const danger = currentStage().danger;
+      const gain = rand(500,1500) * danger;
+      state.beli += gain;
+      state.happiness = clamp(state.happiness+4,0,100);
+      addLog(`Tu tombes sur une cache de trésor oubliée par un équipage disparu : ${fmt(gain)} Beli !`, "good");
+    }
+  },
+  {
+    id:"devilfruit_spawn",
+    condition:()=> !state.devilFruit && ["pirate","chasseur"].includes(state.path),
+    resolve(){
+      const fruit = pick(DEVIL_FRUITS);
+      state.devilFruit = fruit;
+      applyMods(fruit.mods);
+      addLog(`Sur une île isolée, tu remarques un fruit étrange à l'écorce spiralée. Sans réfléchir, tu le manges : c'est le ${fruit.name} (${fruit.type}) ! ${fruit.desc}`, "major");
+    }
+  }
+];
+
+function checkDiscovery(){
+  if(Math.random() >= 0.12) return;
+  const eligible = DISCOVERY_EVENTS.filter(e=>e.condition());
+  if(!eligible.length) return;
+  pick(eligible).resolve();
+}
+
 let pendingChoice = null;
 
 function resolvePendingChoice(idx){
@@ -828,6 +887,8 @@ function afterYearChoiceContinue(){
   const hazardChance = 0.06 * danger + (state.path==="civil" ? -0.05 : 0);
   if(Math.random() < Math.max(0,hazardChance)){
     triggerHazard(danger);
+  } else {
+    checkDiscovery();
   }
   if(!state.alive){ finishAgeUp(); return; }
 
@@ -1257,6 +1318,14 @@ function openStatus(){
     <div class="action-row" style="cursor:default;">
       <div><div class="a-label">Fruit du démon</div><div class="a-sub">${state.devilFruit ? state.devilFruit.name+' ('+state.devilFruit.type+')' : 'Aucun'}</div></div>
     </div>
+    ${!state.flags.hasRoadPoneglyph && (state.flags.poneglyphFragments||0)>0 ? `
+    <div class="action-row" style="cursor:default;">
+      <div><div class="a-label">Fragments de Poneglyphe</div><div class="a-sub">${state.flags.poneglyphFragments}/3 — assez d'intelligence sur Grand Line peut t'en révéler d'autres</div></div>
+    </div>` : ""}
+    ${state.flags.hasRoadPoneglyph ? `
+    <div class="action-row" style="cursor:default;">
+      <div><div class="a-label">Poneglyphe Route</div><div class="a-sub">Complet — la voie vers Laugh Tale t'est ouverte</div></div>
+    </div>` : ""}
     <div class="action-row" style="cursor:default;">
       <div><div class="a-label">Puissance totale</div><div class="a-sub">Score de combat estimé</div></div>
       <div class="a-val">${powerScore()}</div>
