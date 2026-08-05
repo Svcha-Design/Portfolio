@@ -558,7 +558,8 @@ function freshState(){
     crew:[],
     epithet:"",
     log:[],
-    inPrison:false
+    inPrison:false,
+    keys:0, islandVault:null
   };
 }
 
@@ -748,25 +749,32 @@ function childYearGain(){
   return 3;
 }
 
+const CHILD_TRAIN_LABELS = ["S'entraîner physiquement", "Repousser tes limites à l'entraînement", "Enchaîner les exercices physiques", "Te muscler sans relâche"];
+const CHILD_TRAIN_LOGS = ["Tu passes l'année à t'entraîner sans relâche.", "Tu enchaînes les exercices du matin au soir.", "Chaque jour, tu repousses un peu plus tes limites physiques.", "Tu t'endurcis à force de répétition."];
+const CHILD_STUDY_LABELS = ["Étudier et lire", "Te plonger dans les livres", "Apprendre à lire les cartes marines", "Écouter les récits des vieux marins"];
+const CHILD_STUDY_LOGS = ["Tu passes l'année plongé·e dans les livres et les cartes marines.", "Tu apprends patiemment à déchiffrer les cartes de navigation.", "Les récits des vieux loups de mer nourrissent ta curiosité.", "Tu dévores tout ce qui te tombe sous la main."];
+const CHILD_PLAY_LABELS = ["Jouer avec les autres enfants", "Profiter de ton enfance", "Passer du temps avec tes amis", "Explorer les environs en t'amusant"];
+const CHILD_PLAY_LOGS = ["Tu passes une année insouciante à jouer avec les enfants du village.", "Tu ris, tu cours, tu profites simplement d'être enfant.", "Les journées passent vite entre amis, sans souci.", "Tu explores les environs, curieux·se de tout."];
+
 function buildChildChoices(){
   const g = childYearGain();
   return [
-    { label:"S'entraîner physiquement", sub:`Force +${g} · Vitesse +${g} · Bonheur -3`,
+    { label:pick(CHILD_TRAIN_LABELS), sub:`Force +${g} · Vitesse +${g} · Bonheur -3`,
       resolve(){
         applyMods({force:g, vitesse:g, happiness:-3});
-        addLog("Tu passes l'année à t'entraîner sans relâche.", "neutral");
+        addLog(pick(CHILD_TRAIN_LOGS), "neutral");
       }
     },
-    { label:"Étudier et lire", sub:`Intelligence +${g+1} · Bonheur -3`,
+    { label:pick(CHILD_STUDY_LABELS), sub:`Intelligence +${g+1} · Bonheur -3`,
       resolve(){
         applyMods({intelligence:g+1, happiness:-3});
-        addLog("Tu passes l'année plongé·e dans les livres et les cartes marines.", "neutral");
+        addLog(pick(CHILD_STUDY_LOGS), "neutral");
       }
     },
-    { label:"Jouer avec les autres enfants", sub:`Charisme +${g} · Bonheur +6`,
+    { label:pick(CHILD_PLAY_LABELS), sub:`Charisme +${g} · Bonheur +6`,
       resolve(){
         applyMods({charisme:g, happiness:6});
-        addLog("Tu passes une année insouciante à jouer avec les enfants du village.", "neutral");
+        addLog(pick(CHILD_PLAY_LOGS), "neutral");
       }
     }
   ];
@@ -790,11 +798,26 @@ function openChildChoice(){
 }
 
 const PATH_YEAR_LABELS = {
-  pirate: { train:"S'entraîner dur avec l'équipage", risky:"Tenter un coup d'éclat risqué" },
-  marine: { train:"Suivre un entraînement rigoureux", risky:"Mener une opération audacieuse" },
-  chasseur: { train:"Peaufiner tes techniques de traque", risky:"Traquer une prime dangereuse" },
-  revolutionnaire: { train:"T'endurcir pour la cause", risky:"Mener une action clandestine risquée" },
-  civil: { train:"Te former à un nouveau savoir-faire", risky:"Investir dans une affaire risquée" }
+  pirate: {
+    train: ["S'entraîner dur avec l'équipage", "Renforcer tes techniques de combat", "Passer la journée à t'endurcir sur le pont"],
+    risky: ["Tenter un coup d'éclat risqué", "Monter un coup fumant avec l'équipage", "Provoquer le destin en pleine mer"]
+  },
+  marine: {
+    train: ["Suivre un entraînement rigoureux", "Perfectionner ta discipline militaire", "T'astreindre à un entraînement intensif"],
+    risky: ["Mener une opération audacieuse", "Te porter volontaire pour une mission délicate", "Prendre des risques calculés pour la Justice"]
+  },
+  chasseur: {
+    train: ["Peaufiner tes techniques de traque", "Affiner ton instinct de chasseur·se", "T'entraîner à repérer tes cibles"],
+    risky: ["Traquer une prime dangereuse", "Accepter un contrat à haut risque", "Foncer sur une piste incertaine"]
+  },
+  revolutionnaire: {
+    train: ["T'endurcir pour la cause", "Renforcer ta discipline de combattant·e", "Te préparer aux prochaines luttes"],
+    risky: ["Mener une action clandestine risquée", "Infiltrer une position ennemie", "Prendre un risque calculé pour la cause"]
+  },
+  civil: {
+    train: ["Te former à un nouveau savoir-faire", "Perfectionner ton métier", "Investir du temps dans ton apprentissage"],
+    risky: ["Investir dans une affaire risquée", "Tenter ta chance dans une nouvelle activité", "Miser gros sur une opportunité incertaine"]
+  }
 };
 
 const PATH_TRAIN_MODS = {
@@ -803,19 +826,24 @@ const PATH_TRAIN_MODS = {
   civil: {intelligence:2}
 };
 
+const YEAR_TRAIN_LOGS = ["Tu consacres ton année à progresser avec sérieux.", "Chaque jour t'endurcit un peu plus.", "Tu ne relâches jamais tes efforts, année après année.", "La discipline finit par payer."];
+const YEAR_SOCIAL_LOGS = ["Tu prends le temps de vivre, de rire, et de tisser des liens.", "Cette année, tu savoures chaque instant de répit.", "Les liens que tu tisses valent tous les trésors.", "Tu profites pleinement de la vie, loin des soucis."];
+const YEAR_RISKY_WIN_LOGS = ["Ton audace paie : l'année se termine sur un vrai coup d'éclat.", "Le risque en valait la peine.", "Ton pari audacieux se révèle payant.", "Tu sors de cette aventure la tête haute."];
+const YEAR_RISKY_LOSE_LOGS = ["Ton coup de poker tourne mal, tu en gardes des séquelles.", "Cette fois, la chance ne t'a pas souri.", "L'audace a un prix, et tu le payes cher.", "Le risque était trop grand cette fois."];
+
 function buildYearChoices(){
   const path = state.path;
   const labels = PATH_YEAR_LABELS[path] || PATH_YEAR_LABELS.civil;
   const trainMods = PATH_TRAIN_MODS[path] || PATH_TRAIN_MODS.civil;
 
   return [
-    { label:labels.train, sub:"Progression sûre, mais fatigant",
+    { label:pick(labels.train), sub:"Progression sûre, mais fatigant",
       resolve(){
         applyMods({...trainMods, happiness:-4});
-        addLog("Tu consacres ton année à progresser avec sérieux.", "neutral");
+        addLog(pick(YEAR_TRAIN_LOGS), "neutral");
       }
     },
-    { label:labels.risky, sub:"Risqué : grand gain ou revers cuisant",
+    { label:pick(labels.risky), sub:"Risqué : grand gain ou revers cuisant",
       resolve(){
         const danger = currentStage().danger;
         const enemyPower = rand(15,30) * danger;
@@ -826,17 +854,17 @@ function buildYearChoices(){
           if(path==="marine" && Math.random()<0.3) state.marineRank = Math.min(MARINE_RANKS.length-1, state.marineRank+1);
           state.beli += Math.round(gain/2);
           state.happiness = clamp(state.happiness+6,0,100);
-          addLog("Ton audace paie : l'année se termine sur un vrai coup d'éclat.", "good");
+          addLog(pick(YEAR_RISKY_WIN_LOGS), "good");
         } else {
           state.health = clamp(state.health - rand(12,28), 0, 100);
-          addLog("Ton coup de poker tourne mal, tu en gardes des séquelles.", "bad");
+          addLog(pick(YEAR_RISKY_LOSE_LOGS), "bad");
         }
       }
     },
     { label:"Profiter de la vie", sub:"Bonheur & liens sociaux — l'option par défaut",
       resolve(){
         applyMods({happiness:12, charisme:1});
-        addLog("Tu prends le temps de vivre, de rire, et de tisser des liens.", "good");
+        addLog(pick(YEAR_SOCIAL_LOGS), "good");
       }
     }
   ];
@@ -940,6 +968,10 @@ function resolveFight(enemyPower, enemyLabel){
     state.beli += Math.round(gain/2);
     state.happiness = clamp(state.happiness+5,0,100);
     addLog(`Tu triomphes de ${enemyLabel} ! Ta réputation grandit.`, "good");
+    if(Math.random()<0.3){
+      state.keys += 1;
+      addLog("Tu trouves une clé étrange sur ton adversaire vaincu.", "neutral");
+    }
   } else {
     const dmg = rand(15,35);
     state.health = clamp(state.health-dmg,0,100);
@@ -1066,6 +1098,7 @@ function openActionsMenu(){
   rows.push({ label:"Entraînement physique", sub:`Force ${state.force} / Vitesse ${state.vitesse} / Endurance ${state.endurance}`, fn:trainPhysical });
   rows.push({ label:"Étudier", sub:`Intelligence ${state.intelligence}`, fn:trainMind });
   rows.push({ label:"Socialiser", sub:`Charisme ${state.charisme} · Bonheur`, fn:socialize });
+  rows.push({ label:"Fouiller l'île", sub:`Clés : ${state.keys}`, fn:searchIsland });
 
   if(["pirate","marine","chasseur","revolutionnaire"].includes(state.path)){
     rows.push({ label:"Chercher un combat", sub:"Tente ta chance contre un adversaire", fn:seekFight });
@@ -1073,6 +1106,10 @@ function openActionsMenu(){
   if(state.path==="pirate"){
     rows.push({ label:"Chercher un fruit du démon", sub: state.devilFruit? "Déjà obtenu" : "Chance rare de trouver un pouvoir", fn:seekDevilFruit, disabled: !!state.devilFruit });
     rows.push({ label:"Recruter un·e compagnon·gne", sub:`Équipage : ${state.crew.length}`, fn:recruitCrew });
+  }
+  if(state.islandVault && state.islandVault.island===state.island && state.islandVault.rumorHeard && !state.islandVault.resolved){
+    const remaining = state.islandVault.chests.filter(c=>!c.opened).length;
+    rows.push({ label:"Ouvrir les coffres", sub:`🔑 ${state.keys} clé(s) · ${remaining} coffre(s) restant(s)`, fn:openVaultMinigame });
   }
   if(powerScore()>=25 && state.age>=18){
     rows.push({ label:"S'entraîner au Haki", sub:`Observation ${state.hakiObs} · Armement ${state.hakiArm}`, fn:trainHaki });
@@ -1114,6 +1151,23 @@ function socialize(){
   addLog("Une bonne soirée passée avec du monde te fait du bien.", "good");
   save(); renderGame(true);
   toast("+ Charisme / Bonheur");
+}
+function searchIsland(){
+  const roll = Math.random();
+  if(roll<0.4){
+    state.keys += 1;
+    addLog("Tu mets la main sur une vieille clé rouillée en fouillant les environs.", "good");
+    toast("+1 clé");
+  } else if(roll<0.7){
+    const gain = rand(100,500);
+    state.beli += gain;
+    addLog(`Tu trouves ${fmt(gain)} Beli abandonnés sur le chemin.`, "good");
+    toast(`+${fmt(gain)} Beli`);
+  } else {
+    addLog("Tu ne trouves rien d'intéressant cette fois.", "neutral");
+    toast("Rien trouvé");
+  }
+  save(); renderGame(true);
 }
 function trainHaki(){
   if(Math.random()<0.5){
@@ -1197,6 +1251,142 @@ function travelTo(stageId, islandName){
   closeModal();
   save();
   renderGame(true);
+  maybeSpawnIslandVault();
+}
+
+/* ================= DEVIL FRUIT VAULT MINI-GAME ================= */
+
+function buildVaultChests(){
+  const pool = [
+    { type:"fruit" },
+    { type:"beli", amount: rand(800,2500) },
+    { type:"beli", amount: rand(800,2500) },
+    { type:"trap", dmg: rand(8,18) },
+    { type:"empty" }
+  ];
+  for(let i=pool.length-1;i>0;i--){
+    const j = rand(0,i);
+    [pool[i],pool[j]] = [pool[j],pool[i]];
+  }
+  return pool.map(c=>({ ...c, opened:false }));
+}
+
+const CHEST_ICONS = { fruit:"🍈", beli:"💰", trap:"💥", empty:"💨" };
+
+function maybeSpawnIslandVault(){
+  if(state.devilFruit){ state.islandVault = null; return; }
+  if(state.islandVault && state.islandVault.island!==state.island){ state.islandVault = null; }
+  if(state.islandVault) return;
+  if(Math.random() < 0.32){
+    state.islandVault = { island: state.island, stageId: state.stage, rumorHeard:false, chests: buildVaultChests(), resolved:false };
+    save();
+    openRumorChoice();
+  }
+}
+
+function openRumorChoice(){
+  const choices = [
+    { label:"Écouter les rumeurs", sub:"Une rumeur circule sur un trésor caché ici",
+      resolve(){
+        state.islandVault.rumorHeard = true;
+        addLog("Tu tends l'oreille dans une taverne du port : des rumeurs insistent sur un trésor caché — peut-être un fruit du démon — quelque part sur cette île.", "major");
+        save();
+        renderGame(true);
+        openVaultMinigame();
+      }
+    },
+    { label:"Ignorer et poursuivre ta route", sub:"",
+      resolve(){
+        state.islandVault = null;
+        addLog("Tu préfères ne pas t'attarder sur de simples rumeurs de taverne.", "neutral");
+        save();
+        renderGame(true);
+      }
+    }
+  ];
+  pendingChoice = { choices, onResolve:(idx)=> choices[idx].resolve() };
+  const html = choices.map((c,i)=>`
+    <div class="action-row" data-choice="${i}">
+      <div><div class="a-label">${c.label}</div>${c.sub?`<div class="a-sub">${c.sub}</div>`:''}</div>
+      <div class="a-val">→</div>
+    </div>`).join("");
+  openModal("Rumeurs de port", html);
+  document.querySelectorAll("[data-choice]").forEach(el=>{
+    el.addEventListener("click", ()=> resolvePendingChoice(+el.dataset.choice));
+  });
+}
+
+function renderVaultHTML(){
+  const vault = state.islandVault;
+  const chestsHTML = vault.chests.map((c,i)=>{
+    const icon = c.opened ? (CHEST_ICONS[c.type]||"📦") : "📦";
+    const label = !c.opened ? "Coffre scellé" :
+      c.type==="fruit" ? "Fruit du démon !" :
+      c.type==="beli" ? `${fmt(c.amount)} Beli` :
+      c.type==="trap" ? "Un piège !" : "Vide";
+    return `<button class="chest-btn ${c.opened?'opened':''}" data-chest="${i}" ${c.opened?'disabled':''}>
+      <span class="chest-icon">${icon}</span>
+      <span class="chest-label">${label}</span>
+    </button>`;
+  }).join("");
+  return `
+    <p class="modal-intro">Des coffres scellés attendent d'être ouverts. Chaque coffre coûte une clé.</p>
+    <div class="vault-keys">🔑 Clés disponibles : <b>${state.keys}</b></div>
+    <div class="vault-grid">${chestsHTML}</div>
+    <button class="btn btn-ghost btn-lg" id="btnVaultClose" style="margin-top:10px;">Fermer</button>
+  `;
+}
+
+function openVaultMinigame(){
+  if(!state.islandVault) return;
+  openModal(`Les coffres de ${state.islandVault.island}`, renderVaultHTML());
+  wireVaultButtons();
+}
+
+function wireVaultButtons(){
+  document.querySelectorAll(".chest-btn:not(.opened)").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      if(state.keys<=0){ toast("Tu n'as pas de clé pour l'instant."); return; }
+      openChest(+btn.dataset.chest);
+    });
+  });
+  const closeBtn = document.getElementById("btnVaultClose");
+  if(closeBtn) closeBtn.addEventListener("click", closeModal);
+}
+
+function openChest(idx){
+  const vault = state.islandVault;
+  if(!vault) return;
+  const chest = vault.chests[idx];
+  if(!chest || chest.opened) return;
+  state.keys -= 1;
+  chest.opened = true;
+  if(chest.type==="fruit"){
+    const fruit = pick(DEVIL_FRUITS);
+    state.devilFruit = fruit;
+    applyMods(fruit.mods);
+    addLog(`Dans l'un des coffres, tu découvres le ${fruit.name} (${fruit.type}) ! ${fruit.desc}`, "major");
+    vault.resolved = true;
+    state.islandVault = null;
+  } else if(chest.type==="beli"){
+    state.beli += chest.amount;
+    addLog(`Le coffre contenait ${fmt(chest.amount)} Beli.`, "good");
+  } else if(chest.type==="trap"){
+    state.health = clamp(state.health-chest.dmg,0,100);
+    addLog(`Le coffre était piégé ! Tu perds ${chest.dmg} points de vie.`, "bad");
+  } else {
+    addLog("Le coffre est vide.", "neutral");
+  }
+  checkDeath();
+  save();
+  renderGame(true);
+  if(!state.alive){ closeModal(); return; }
+  if(state.islandVault){
+    document.getElementById("modalBody").innerHTML = renderVaultHTML();
+    wireVaultButtons();
+  } else {
+    closeModal();
+  }
 }
 
 function islandChipHTML(name, stage){
@@ -1444,6 +1634,8 @@ function wire(){
   if(existing && existing.alive){
     if(existing.maxStage===undefined) existing.maxStage = existing.stage;
     if(!existing.flags) existing.flags = {};
+    if(existing.keys===undefined) existing.keys = 0;
+    if(existing.islandVault===undefined) existing.islandVault = null;
     document.getElementById("btnContinue").hidden = false;
     document.getElementById("btnContinue").addEventListener("click", ()=>{
       state = existing;
