@@ -363,6 +363,12 @@ h1,h2,h3{ font-family:'Archivo Black', system-ui, sans-serif; margin:0; }
 .move-cost{ font-size:10px; color:var(--gold); }
 .battle-move.disabled{ opacity:.35; pointer-events:none; }
 
+.qte-sequence{ display:flex; justify-content:center; gap:10px; margin:10px 0; }
+.qte-symbol{ font-size:28px; opacity:.35; filter:grayscale(1); transition: opacity .15s ease, filter .15s ease; }
+.qte-symbol.done{ opacity:1; filter:none; }
+.qte-buttons{ display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-top:8px; }
+.qte-btn{ font-size:26px; padding:14px 4px; text-align:center; }
+
 .stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .stat-box{ background:var(--sea); border-radius:12px; padding:10px 12px; }
 .stat-box .s-name{ font-size:11px; color:#9fb3c8; }

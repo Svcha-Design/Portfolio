@@ -76,6 +76,17 @@ const SHIP_TIERS = [
   { name:"Vaisseau amiral", cost:90000, capacity:10, firepower:100 }
 ];
 
+const WEAPONS = [
+  { name:"Sabre court", cost:800, mods:{force:5, vitesse:3, endurance:-3} },
+  { name:"Pistolet", cost:1000, mods:{vitesse:5, intelligence:3, force:-4} },
+  { name:"Bâton de combat", cost:600, mods:{vitesse:6, charisme:2, force:-3} },
+  { name:"Gants cloutés", cost:700, mods:{force:4, endurance:4, intelligence:-3} },
+  { name:"Fleuret", cost:1200, mods:{vitesse:7, intelligence:2, endurance:-4} },
+  { name:"Lance lourde", cost:1500, mods:{force:8, endurance:4, vitesse:-6} },
+  { name:"Marteau de guerre", cost:1800, mods:{force:10, vitesse:-7, endurance:2} },
+  { name:"Hache de guerre", cost:2000, mods:{force:9, endurance:-2, vitesse:-4} }
+];
+
 const MARINE_RANKS = [
   "Recrue","Matelot","Enseigne","Lieutenant","Capitaine de corvette",
   "Commandant","Capitaine de vaisseau","Commodore","Contre-amiral",
@@ -282,13 +293,17 @@ const SPECIAL_EVENTS = [
         resolve(done){
           const bonus = state.flags.wanoQuestBonus||0;
           const questStage = state.flags.wanoQuestStage||0;
-          const basePower = questStage===0 ? 180 : clamp(170 - bonus*12, 110, 180);
+          const alliedBoost = (state.ally && state.ally.allied) ? 12 : 0;
+          const basePower = questStage===0 ? 180 : clamp(170 - bonus*12 - alliedBoost, 100, 180);
           if(questStage===0){
             addLog("Tu te jettes dans la bataille seul·e, sans le soutien d'une résistance que tu as ignorée.", "neutral");
           } else if(bonus>=3){
             addLog("Les alliés que tu as rassemblés se battent à tes côtés : caravane sabotée, clans samouraïs, et le vieux commandant en renfort.", "good");
           } else if(bonus>0){
             addLog(`Une partie de la résistance que tu as aidé à bâtir combat à tes côtés (${bonus} soutien${bonus>1?'s':''}).`, "neutral");
+          }
+          if(alliedBoost>0){
+            addLog(`${state.ally.name} se bat à tes côtés dans la bataille.`, "good");
           }
           startWarSequence({
             enemyLabel: "Un guerrier de l'équipage de Kaido",
@@ -341,9 +356,11 @@ const SPECIAL_EVENTS = [
     choices:[
       { label:"Te jeter dans la bataille", sub:"Trois vagues de combat, un affrontement historique",
         resolve(done){
+          const allied = state.ally && state.ally.allied;
+          if(allied) addLog(`${state.ally.name} se bat à tes côtés dans la bataille.`, "good");
           startWarSequence({
             enemyLabel: state.path==="marine" ? "Un commandant pirate de l'Empereur" : "Un vice-amiral de la Marine",
-            basePower: 150,
+            basePower: Math.max(100, 150 - (allied?12:0)),
             onComplete(wins){
               if(state.alive){
                 if(wins>=3){
@@ -970,6 +987,24 @@ const SPECIAL_EVENTS = [
       { label:"Observer depuis les gradins", sub:"",
         resolve(){ addLog("Tu préfères observer le tournoi plutôt que d'y risquer ta peau.", "neutral"); } }
     ]
+  },
+
+  {
+    id:"ally_offer",
+    title:"Une rencontre providentielle",
+    condition:()=> ["pirate","marine","chasseur","revolutionnaire"].includes(state.path) && state.age>=18 && state.stage>=2 && !state.ally,
+    text:"Tu croises la route d'un individu au potentiel impressionnant. Vos objectifs semblent alignés — pour un temps, du moins.",
+    choices:[
+      { label:"Proposer une alliance", sub:"",
+        resolve(){
+          state.ally = { name: randomName(), epithet: pick(EPITHETS), allied:true };
+          applyMods({charisme:2});
+          addLog(`${state.ally.name} "${state.ally.epithet}" accepte de faire équipe avec toi. Vous vous soutiendrez dans les grandes batailles à venir.`, "major");
+        }
+      },
+      { label:"Décliner, tu préfères rester libre", sub:"",
+        resolve(){ addLog("Tu préfères poursuivre seul·e ta route.", "neutral"); } }
+    ]
   }
 ];
 
@@ -1109,20 +1144,72 @@ const DISCOVERY_EVENTS = [
   {
     id:"devilfruit_spawn",
     condition:()=> !state.devilFruit && ["pirate","chasseur"].includes(state.path),
-    resolve(){
-      const fruit = pick(DEVIL_FRUITS);
-      state.devilFruit = fruit;
-      applyMods(fruit.mods);
-      addLog(`Sur une île isolée, tu remarques un fruit étrange à l'écorce spiralée. Sans réfléchir, tu le manges : c'est le ${fruit.name} (${fruit.type}) ! ${fruit.desc}`, "major");
+    resolve(done){
+      addLog("Sur une île isolée, tu remarques un fruit étrange à l'écorce spiralée.", "major");
+      offerDevilFruit(pick(DEVIL_FRUITS), done);
+      return true;
     }
   }
 ];
 
-function checkDiscovery(){
-  if(Math.random() >= 0.12) return;
+function checkDiscovery(onDone){
+  if(Math.random() >= 0.12){ onDone(); return; }
   const eligible = DISCOVERY_EVENTS.filter(e=>e.condition());
-  if(!eligible.length) return;
-  pick(eligible).resolve();
+  if(!eligible.length){ onDone(); return; }
+  const chosen = pick(eligible);
+  const isAsync = chosen.resolve(onDone);
+  if(!isAsync) onDone();
+}
+
+/* ================= RIVAL & ALLIÉ ================= */
+
+function ensureRival(){
+  if(!state.rival){
+    state.rival = { name: randomName(), epithet: pick(EPITHETS), encounters:0, defeated:false, lastEncounterAge:0 };
+  }
+}
+
+function checkRival(){
+  if(!["pirate","marine","chasseur","revolutionnaire"].includes(state.path)) return false;
+  ensureRival();
+  const r = state.rival;
+  if(r.defeated || r.encounters>=4) return false;
+  if(state.age - r.lastEncounterAge < 3) return false;
+  if(Math.random() >= 0.12) return false;
+  return true;
+}
+
+function triggerRivalEncounter(onDone){
+  const r = state.rival;
+  r.encounters++;
+  r.lastEncounterAge = state.age;
+  const isFinal = r.encounters>=4;
+  const allied = state.ally && state.ally.allied;
+  const enemyPower = Math.max(15, Math.round(powerScore() * (rand(90,125)/100)) - (allied?15:0));
+  const label = `${r.name} "${r.epithet}"`;
+  addLog(`${label} surgit devant toi${r.encounters===1?", un rival dont tu entendras reparler":''} !${allied?` ${state.ally.name} se tient prêt·e à intervenir.`:''}`, "major");
+  startBattle(enemyPower, label, (outcome)=>{
+    if(outcome==="victory"){
+      const gain = rand(1000,3000) + powerScore()*20;
+      state.beli += gain;
+      state.happiness = clamp(state.happiness+8,0,100);
+      if(isFinal){
+        r.defeated = true;
+        addLog(`Cette fois, ${r.name} ne se relève pas. Votre rivalité s'achève, et ta légende grandit.`, "major");
+        if(!state.epithet){
+          state.epithet = pick(EPITHETS);
+          addLog(`On te surnomme désormais "${state.epithet}".`, "major");
+        }
+      } else {
+        addLog(`Tu triomphes de ${r.name}, qui jure de revenir plus fort·e.`, "good");
+      }
+    } else if(outcome==="defeat"){
+      addLog(`${r.name} prend le dessus cette fois et s'évanouit dans la nature.`, "bad");
+    } else {
+      addLog(`Tu réussis à échapper à ${r.name}, pour cette fois.`, "neutral");
+    }
+    onDone();
+  });
 }
 
 let pendingChoice = null;
@@ -1199,7 +1286,8 @@ function freshState(){
     inPrison:false,
     keys:0, islandVault:null,
     energy:100,
-    ship:{ tier:0 }
+    ship:{ tier:0 },
+    rival:null, ally:null, weapon:null
   };
 }
 
@@ -1616,8 +1704,13 @@ function afterYearChoiceContinue(){
     triggerHazard(danger, finishYearTail);
     return;
   }
-  checkDiscovery();
-  finishYearTail();
+
+  if(checkRival()){
+    triggerRivalEncounter(finishYearTail);
+    return;
+  }
+
+  checkDiscovery(finishYearTail);
 }
 
 function finishYearTail(){
@@ -1797,12 +1890,12 @@ function battleAction(move){
   } else if(move==="observation"){
     b.dodging = true;
     battlePush("Tu anticipes le prochain mouvement adverse grâce à ton Haki de l'Observation.");
+  } else if(move==="fruit"){
+    startFruitQTE();
+    return;
   } else {
     let dmg, text;
-    if(move==="fruit"){
-      dmg = rand(15,25) + Math.round(fruitPower()*0.5);
-      text = `Tu déchaînes le pouvoir du ${state.devilFruit.name} !`;
-    } else if(move==="armement"){
+    if(move==="armement"){
       dmg = rand(10,18) + Math.round(state.hakiArm*0.4);
       text = "Ton poing se durcit d'une force invisible : le Haki de l'Armement frappe fort.";
     } else {
@@ -1815,6 +1908,79 @@ function battleAction(move){
 
   renderBattleUpdate();
 
+  if(b.enemyHP<=0){
+    setTimeout(battleVictory, 500);
+    return;
+  }
+  setTimeout(enemyTurn, 700);
+}
+
+const FRUIT_QTE_SYMBOLS = ["🔥","💧","⚡","🌪️","❄️","🌑"];
+
+function startFruitQTE(){
+  const b = battle;
+  if(!b) return;
+  const seq = [];
+  for(let i=0;i<4;i++) seq.push(pick(FRUIT_QTE_SYMBOLS));
+  b.qte = { sequence:seq, input:[], timeoutId:null };
+  renderFruitQTE();
+  b.qte.timeoutId = setTimeout(()=> resolveFruitQTE(), 3500);
+}
+
+function renderFruitQTE(){
+  const b = battle;
+  if(!b || !b.qte) return;
+  const seq = b.qte.sequence;
+  const options = [...new Set(seq)];
+  while(options.length<4){
+    const extra = pick(FRUIT_QTE_SYMBOLS);
+    if(!options.includes(extra)) options.push(extra);
+  }
+  for(let i=options.length-1;i>0;i--){ const j=rand(0,i); [options[i],options[j]]=[options[j],options[i]]; }
+
+  document.getElementById("modalBody").innerHTML = `
+    <p class="modal-intro">Reproduis la séquence pour déchaîner la pleine puissance de ton fruit !</p>
+    <div class="qte-sequence">${seq.map((s,i)=>`<span class="qte-symbol ${i<b.qte.input.length?'done':''}">${s}</span>`).join("")}</div>
+    <div class="qte-buttons">${options.map(s=>`<button class="btn btn-chip qte-btn" data-symbol="${s}">${s}</button>`).join("")}</div>
+  `;
+  document.querySelectorAll(".qte-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=> onFruitQTETap(btn.dataset.symbol));
+  });
+}
+
+function onFruitQTETap(symbol){
+  const b = battle;
+  if(!b || !b.qte) return;
+  const expected = b.qte.sequence[b.qte.input.length];
+  if(symbol!==expected){
+    clearTimeout(b.qte.timeoutId);
+    resolveFruitQTE();
+    return;
+  }
+  b.qte.input.push(symbol);
+  if(b.qte.input.length >= b.qte.sequence.length){
+    clearTimeout(b.qte.timeoutId);
+    resolveFruitQTE();
+    return;
+  }
+  renderFruitQTE();
+}
+
+function resolveFruitQTE(){
+  const b = battle;
+  if(!b || !b.qte) return;
+  const correctCount = b.qte.input.length;
+  const totalCount = b.qte.sequence.length;
+  b.qte = null;
+  const accuracy = correctCount/totalCount;
+  let dmg = rand(15,25) + Math.round(fruitPower()*0.5);
+  dmg = Math.round(dmg * (0.4 + accuracy*0.6));
+  b.enemyHP = Math.max(0, b.enemyHP-dmg);
+  const text = accuracy>=1 ? `Tu déchaînes le pouvoir du ${state.devilFruit.name} à la perfection !` :
+    accuracy>0 ? `Tu déchaînes le pouvoir du ${state.devilFruit.name}, avec quelques ratés.` :
+    `Ta maîtrise du ${state.devilFruit.name} te fait défaut : l'attaque part de travers.`;
+  battlePush(`${text} (-${dmg} PV)`);
+  renderBattleUpdate();
   if(b.enemyHP<=0){
     setTimeout(battleVictory, 500);
     return;
@@ -1937,20 +2103,20 @@ function startWarSequence(config){
 }
 
 function triggerNavalBattle(danger, onDone){
-  const enemyPower = rand(20,40) * danger;
+  const allied = state.ally && state.ally.allied;
+  const enemyPower = Math.max(15, rand(20,40)*danger - (allied?15:0));
   const hadDevilFruit = !state.devilFruit && Math.random() < 0.25;
   const enemyLabel = pick(["un navire pirate rival", "une flotte pirate hostile", "un équipage de chasseurs de trésors armés jusqu'aux dents"]);
-  addLog(`${enemyLabel[0].toUpperCase()}${enemyLabel.slice(1)} ouvre le feu sur ton navire !`, "bad");
+  addLog(`${enemyLabel[0].toUpperCase()}${enemyLabel.slice(1)} ouvre le feu sur ton navire !${allied?` ${state.ally.name} combat à tes côtés.`:''}`, "bad");
   startBattle(enemyPower, enemyLabel, (outcome)=>{
     if(outcome==="victory"){
       const bonus = rand(1000,4000) * danger;
       state.beli += bonus;
       addLog(`Le navire ennemi est vaincu : tu pilles ${fmt(bonus)} Beli dans ses cales.`, "good");
       if(hadDevilFruit){
-        const fruit = pick(DEVIL_FRUITS);
-        state.devilFruit = fruit;
-        applyMods(fruit.mods);
-        addLog(`Parmi le butin, un fruit du démon ! Tu manges le ${fruit.name} (${fruit.type}). ${fruit.desc}`, "major");
+        addLog("Parmi le butin, un fruit du démon !", "major");
+        offerDevilFruit(pick(DEVIL_FRUITS), ()=>onDone(outcome));
+        return;
       }
     } else if(outcome==="defeat" && state.crew.length && Math.random()<0.4){
       const lost = state.crew.pop();
@@ -2270,6 +2436,8 @@ function openActionsMenu(){
   rows.push({ label:"Étudier", sub:`Intelligence ${state.intelligence}`, fn:trainMind, cost:15 });
   rows.push({ label:"Socialiser", sub:`Charisme ${state.charisme} · Bonheur`, fn:socialize, cost:15 });
   rows.push({ label:"Fouiller l'île", sub:`Clés : ${state.keys}`, fn:searchIsland, cost:15 });
+  rows.push({ label:"Soins", sub:`Santé ${Math.round(state.health)}/100`, fn:openHealMenu, cost:0, disabled: state.health>=100 });
+  rows.push({ label:"Arsenal", sub: state.weapon ? `Équipée : ${state.weapon.name}` : "Aucune arme équipée", fn:openWeaponMarket, cost:15 });
 
   if(["pirate","marine","chasseur","revolutionnaire"].includes(state.path)){
     rows.push({ label:"Chercher un combat", sub:"Tente ta chance contre un adversaire", fn:seekFight, cost:25 });
@@ -2345,6 +2513,74 @@ function searchIsland(){
   }
   save(); renderGame(true);
 }
+
+function openHealMenu(){
+  const missing = 100 - state.health;
+  if(missing<=0){ toast("Tu es déjà en pleine santé."); return; }
+  const buyCost = Math.round(missing * 25);
+  const canBuy = state.beli >= buyCost;
+  const canRest = state.energy >= 50;
+  const html = `
+    <div class="action-row ${canBuy?'':'disabled'}" id="btnHealBuy">
+      <div><div class="a-label">Payer un médecin</div><div class="a-sub">Soigne entièrement · ${fmt(buyCost)} Beli</div></div>
+      <div class="a-val">${canBuy?'💰':'🔒'}</div>
+    </div>
+    <div class="action-row ${canRest?'':'disabled'}" id="btnHealRest">
+      <div><div class="a-label">Puiser dans tes réserves</div><div class="a-sub">Soigne entièrement · 50 Énergie, sans frais</div></div>
+      <div class="a-val">${canRest?'⚡':'🔒'}</div>
+    </div>
+  `;
+  openModal("Soins", html);
+  const buyBtn = document.getElementById("btnHealBuy");
+  if(buyBtn) buyBtn.addEventListener("click", ()=>{
+    if(state.beli<buyCost) return;
+    state.beli -= buyCost;
+    state.health = 100;
+    addLog(`Un médecin te soigne entièrement contre ${fmt(buyCost)} Beli.`, "good");
+    closeModal(); save(); renderGame(true);
+  });
+  const restBtn = document.getElementById("btnHealRest");
+  if(restBtn) restBtn.addEventListener("click", ()=>{
+    if(state.energy<50) return;
+    state.energy -= 50;
+    state.health = 100;
+    addLog("Tu puises dans tes dernières réserves d'énergie pour te remettre sur pied.", "good");
+    closeModal(); save(); renderGame(true);
+  });
+}
+
+function openWeaponMarket(){
+  const html = WEAPONS.map((w,i)=>{
+    const equipped = state.weapon && state.weapon.name===w.name;
+    const affordable = state.beli >= w.cost;
+    const modsText = Object.entries(w.mods).map(([k,v])=>`${v>0?'+':''}${v} ${STAT_LABELS[k]}`).join(" · ");
+    return `<div class="action-row ${equipped||!affordable?'disabled':''}" data-weapon="${i}">
+      <div><div class="a-label">${w.name}${equipped?' (équipée)':''}</div><div class="a-sub">${modsText} · ${fmt(w.cost)} Beli</div></div>
+      <div class="a-val">${equipped?'✓':(affordable?'→':'🔒')}</div>
+    </div>`;
+  }).join("");
+  openModal("Arsenal", html);
+  document.querySelectorAll("[data-weapon]").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      const w = WEAPONS[+el.dataset.weapon];
+      if(state.weapon && state.weapon.name===w.name) return;
+      if(state.beli < w.cost) return;
+      state.beli -= w.cost;
+      if(state.weapon){
+        const reversed = {};
+        for(const k in state.weapon.mods) reversed[k] = -state.weapon.mods[k];
+        applyMods(reversed);
+      }
+      state.weapon = w;
+      applyMods(w.mods);
+      addLog(`Tu t'équipes d'un(e) ${w.name}.`, "good");
+      closeModal();
+      save();
+      renderGame(true);
+    });
+  });
+}
+
 function trainHaki(){
   if(Math.random()<0.5){
     state.hakiObs = clamp(state.hakiObs+rand(3,7),0,100);
@@ -2364,18 +2600,62 @@ function seekFight(){
   const enemyPower = rand(15,30)*danger;
   startBattle(enemyPower, pick(["un pirate rival","un officier de Marine","un chasseur de primes","un monstre marin"]), ()=>{});
 }
+function offerDevilFruit(fruit, onDone){
+  const canGiveCrew = state.path==="pirate" && state.crew.length>0;
+  const FRUIT_SELL_VALUES = { "Logia":()=>rand(6000,12000), "Zoan Mythique":()=>rand(6000,12000), "Paramecia Spéciale":()=>rand(4000,8000) };
+  const choices = [
+    { label:"La manger", sub:`Fruit ${fruit.type} — effet permanent`,
+      resolve(){
+        state.devilFruit = fruit;
+        applyMods(fruit.mods);
+        addLog(`Tu manges le ${fruit.name} (${fruit.type}) ! ${fruit.desc}`, "major");
+      }
+    }
+  ];
+  if(canGiveCrew){
+    choices.push({ label:"La donner à l'équipage", sub:"Renforce un·e compagnon·gne au hasard",
+      resolve(){
+        const member = pick(state.crew);
+        const boost = rand(15,30);
+        member.power += boost;
+        addLog(`${member.name} mange le ${fruit.name} et devient bien plus puissant·e (+${boost} de puissance de combat).`, "good");
+      }
+    });
+  }
+  choices.push({ label:"La revendre", sub:"Beli garanti, sans risque",
+    resolve(){
+      const value = (FRUIT_SELL_VALUES[fruit.type] || (()=>rand(3000,6000)))();
+      state.beli += value;
+      addLog(`Tu revends le ${fruit.name} au marché noir pour ${fmt(value)} Beli.`, "good");
+    }
+  });
+
+  pendingChoice = { choices, onResolve:(idx)=>{
+    choices[idx].resolve();
+    save();
+    renderGame(true);
+    onDone();
+  }};
+  const html = `<p class="modal-intro">${fruit.desc} (${fruit.type})</p>` + choices.map((c,i)=>`
+    <div class="action-row" data-choice="${i}">
+      <div><div class="a-label">${c.label}</div>${c.sub?`<div class="a-sub">${c.sub}</div>`:''}</div>
+      <div class="a-val">→</div>
+    </div>`).join("");
+  openModal(fruit.name, html);
+  document.querySelectorAll("[data-choice]").forEach(el=>{
+    el.addEventListener("click", ()=> resolvePendingChoice(+el.dataset.choice));
+  });
+}
+
 function seekDevilFruit(){
   if(state.devilFruit){ toast("Tu as déjà mangé un fruit du démon."); return; }
   const chance = 0.18 + state.chance/300;
   if(Math.random() < chance){
-    const fruit = pick(DEVIL_FRUITS);
-    state.devilFruit = fruit;
-    applyMods(fruit.mods);
-    addLog(`Tu manges le ${fruit.name} (${fruit.type}) ! ${fruit.desc}`, "major");
+    offerDevilFruit(pick(DEVIL_FRUITS), ()=>{});
   } else {
     addLog("Tu explores une île à la recherche d'un fruit du démon, sans succès cette fois.", "neutral");
+    save(); renderGame(true);
   }
-  save(); renderGame(true);
 }
 function scoutRecruits(){
   const capacity = SHIP_TIERS[state.ship.tier].capacity;
@@ -2569,29 +2849,7 @@ function wireVaultButtons(){
   if(closeBtn) closeBtn.addEventListener("click", closeModal);
 }
 
-function openChest(idx){
-  const vault = state.islandVault;
-  if(!vault) return;
-  const chest = vault.chests[idx];
-  if(!chest || chest.opened) return;
-  state.keys -= 1;
-  chest.opened = true;
-  if(chest.type==="fruit"){
-    const fruit = pick(DEVIL_FRUITS);
-    state.devilFruit = fruit;
-    applyMods(fruit.mods);
-    addLog(`Dans l'un des coffres, tu découvres le ${fruit.name} (${fruit.type}) ! ${fruit.desc}`, "major");
-    vault.resolved = true;
-    state.islandVault = null;
-  } else if(chest.type==="beli"){
-    state.beli += chest.amount;
-    addLog(`Le coffre contenait ${fmt(chest.amount)} Beli.`, "good");
-  } else if(chest.type==="trap"){
-    state.health = clamp(state.health-chest.dmg,0,100);
-    addLog(`Le coffre était piégé ! Tu perds ${chest.dmg} points de vie.`, "bad");
-  } else {
-    addLog("Le coffre est vide.", "neutral");
-  }
+function finishChestUI(){
   checkDeath();
   save();
   renderGame(true);
@@ -2602,6 +2860,31 @@ function openChest(idx){
   } else {
     closeModal();
   }
+}
+
+function openChest(idx){
+  const vault = state.islandVault;
+  if(!vault) return;
+  const chest = vault.chests[idx];
+  if(!chest || chest.opened) return;
+  state.keys -= 1;
+  chest.opened = true;
+  if(chest.type==="fruit"){
+    vault.resolved = true;
+    state.islandVault = null;
+    addLog("Dans l'un des coffres, un fruit du démon repose sur un lit de velours.", "major");
+    offerDevilFruit(pick(DEVIL_FRUITS), finishChestUI);
+    return;
+  } else if(chest.type==="beli"){
+    state.beli += chest.amount;
+    addLog(`Le coffre contenait ${fmt(chest.amount)} Beli.`, "good");
+  } else if(chest.type==="trap"){
+    state.health = clamp(state.health-chest.dmg,0,100);
+    addLog(`Le coffre était piégé ! Tu perds ${chest.dmg} points de vie.`, "bad");
+  } else {
+    addLog("Le coffre est vide.", "neutral");
+  }
+  finishChestUI();
 }
 
 function islandChipHTML(name, stage){
@@ -2756,6 +3039,21 @@ function openStatus(){
     <div class="action-row" style="cursor:default;">
       <div><div class="a-label">Fruit du démon</div><div class="a-sub">${state.devilFruit ? state.devilFruit.name+' ('+state.devilFruit.type+')' : 'Aucun'}</div></div>
     </div>
+    <div class="action-row" style="cursor:default;">
+      <div><div class="a-label">Arme</div><div class="a-sub">${state.weapon ? state.weapon.name : 'Aucune arme équipée'}</div></div>
+    </div>
+    ${state.rival && !state.rival.defeated ? `
+    <div class="action-row" style="cursor:default;">
+      <div><div class="a-label">Rival</div><div class="a-sub">${state.rival.name} "${state.rival.epithet}" · ${state.rival.encounters}/4 affrontements</div></div>
+    </div>` : ""}
+    ${state.rival && state.rival.defeated ? `
+    <div class="action-row" style="cursor:default;">
+      <div><div class="a-label">Rival</div><div class="a-sub">${state.rival.name} "${state.rival.epithet}" — rivalité achevée</div></div>
+    </div>` : ""}
+    ${state.ally && state.ally.allied ? `
+    <div class="action-row" style="cursor:default;">
+      <div><div class="a-label">Allié·e</div><div class="a-sub">${state.ally.name} "${state.ally.epithet}" · te soutient dans les grandes batailles</div></div>
+    </div>` : ""}
     ${!state.flags.hasRoadPoneglyph && (state.flags.poneglyphFragments||0)>0 ? `
     <div class="action-row" style="cursor:default;">
       <div><div class="a-label">Fragments de Poneglyphe</div><div class="a-sub">${state.flags.poneglyphFragments}/3 — assez d'intelligence sur Grand Line peut t'en révéler d'autres</div></div>
@@ -2898,6 +3196,9 @@ function wire(){
     if(existing.islandVault===undefined) existing.islandVault = null;
     if(existing.energy===undefined) existing.energy = 100;
     if(!existing.ship) existing.ship = { tier:0 };
+    if(existing.rival===undefined) existing.rival = null;
+    if(existing.ally===undefined) existing.ally = null;
+    if(existing.weapon===undefined) existing.weapon = null;
     document.getElementById("btnContinue").hidden = false;
     document.getElementById("btnContinue").addEventListener("click", ()=>{
       state = existing;
