@@ -659,7 +659,8 @@ function freshState(){
     epithet:"",
     log:[],
     inPrison:false,
-    keys:0, islandVault:null
+    keys:0, islandVault:null,
+    energy:100
   };
 }
 
@@ -835,6 +836,7 @@ function ageUp(){
 }
 
 function finishAgeUp(){
+  state.energy = clamp(state.energy + 45, 0, 100);
   checkDeath();
   checkBountyReveal();
   save();
@@ -944,20 +946,33 @@ const YEAR_TRAIN_LOGS = ["Tu consacres ton année à progresser avec sérieux.",
 const YEAR_SOCIAL_LOGS = ["Tu prends le temps de vivre, de rire, et de tisser des liens.", "Cette année, tu savoures chaque instant de répit.", "Les liens que tu tisses valent tous les trésors.", "Tu profites pleinement de la vie, loin des soucis."];
 const YEAR_RISKY_WIN_LOGS = ["Ton audace paie : l'année se termine sur un vrai coup d'éclat.", "Le risque en valait la peine.", "Ton pari audacieux se révèle payant.", "Tu sors de cette aventure la tête haute."];
 const YEAR_RISKY_LOSE_LOGS = ["Ton coup de poker tourne mal, tu en gardes des séquelles.", "Cette fois, la chance ne t'a pas souri.", "L'audace a un prix, et tu le payes cher.", "Le risque était trop grand cette fois."];
+const YEAR_REST_LABELS = ["Te reposer et soigner tes blessures", "Prendre un peu de repos", "Faire une pause bien méritée", "Laisser ton corps récupérer"];
+const YEAR_REST_LOGS = ["Tu prends le temps de te reposer et de soigner tes blessures.", "Un peu de repos ne fait jamais de mal.", "Tu recharges tes batteries avant la suite.", "Ce répit te fait le plus grand bien."];
+const YEAR_EXPLORE_LABELS = ["Explorer les environs", "Partir en reconnaissance", "Parcourir la région à la recherche d'opportunités", "Suivre une piste incertaine"];
+const YEAR_EXPLORE_LOGS = ["Tu explores les environs et débusques quelques opportunités.", "Ta curiosité te mène vers d'heureuses surprises.", "Une reconnaissance discrète porte ses fruits.", "Le hasard des chemins te sourit un peu."];
+const YEAR_NETWORK_LABELS = {
+  pirate: ["Renforcer les liens avec ton équipage", "Resserrer les rangs de l'équipage", "Consolider la confiance de tes compagnons"],
+  marine: ["Cultiver tes relations dans la hiérarchie", "Te rapprocher de tes supérieurs", "Soigner ton réseau au sein de la Marine"],
+  chasseur: ["Étoffer ton réseau d'informateurs", "Nouer des contacts utiles", "Entretenir tes relations dans le milieu"],
+  revolutionnaire: ["Renforcer les liens avec la cause", "Consolider ta cellule révolutionnaire", "Resserrer les liens avec tes camarades"],
+  civil: ["Tisser des liens dans ta communauté", "Te rapprocher de tes voisins", "Entretenir ton réseau local"]
+};
+const YEAR_NETWORK_LOGS = ["Ces liens renforcés te seront précieux.", "La confiance mutuelle grandit.", "Ton réseau s'élargit peu à peu.", "Ces relations solides valent de l'or."];
 
 function buildYearChoices(){
   const path = state.path;
   const labels = PATH_YEAR_LABELS[path] || PATH_YEAR_LABELS.civil;
   const trainMods = PATH_TRAIN_MODS[path] || PATH_TRAIN_MODS.civil;
+  const networkLabels = YEAR_NETWORK_LABELS[path] || YEAR_NETWORK_LABELS.civil;
 
-  return [
-    { label:pick(labels.train), sub:"Progression sûre, mais fatigant",
+  const pool = [
+    { key:"train", label:pick(labels.train), sub:"Progression sûre, mais fatigant",
       resolve(){
         applyMods({...trainMods, happiness:-4});
         addLog(pick(YEAR_TRAIN_LOGS), "neutral");
       }
     },
-    { label:pick(labels.risky), sub:"Risqué : grand gain ou revers cuisant",
+    { key:"risky", label:pick(labels.risky), sub:"Risqué : grand gain ou revers cuisant",
       resolve(){
         const danger = currentStage().danger;
         const enemyPower = rand(15,30) * danger;
@@ -975,13 +990,43 @@ function buildYearChoices(){
         }
       }
     },
-    { label:"Profiter de la vie", sub:"Bonheur & liens sociaux — l'option par défaut",
+    { key:"social", label:"Profiter de la vie", sub:"Bonheur & liens sociaux",
       resolve(){
         applyMods({happiness:12, charisme:1});
         addLog(pick(YEAR_SOCIAL_LOGS), "good");
       }
+    },
+    { key:"rest", label:pick(YEAR_REST_LABELS), sub:"Santé et Bonheur en hausse, sans progression",
+      resolve(){
+        applyMods({health:rand(15,25), happiness:5});
+        addLog(pick(YEAR_REST_LOGS), "good");
+      }
+    },
+    { key:"explore", label:pick(YEAR_EXPLORE_LABELS), sub:"Un peu de Beli et de Chance, sans risque",
+      resolve(){
+        applyMods({beli:rand(300,900), chance:1});
+        addLog(pick(YEAR_EXPLORE_LOGS), "neutral");
+      }
+    },
+    { key:"network", label:pick(networkLabels), sub:"Charisme & Bonheur",
+      resolve(){
+        applyMods({charisme:2, happiness:3});
+        addLog(pick(YEAR_NETWORK_LOGS), "good");
+      }
     }
   ];
+
+  for(let i=pool.length-1;i>0;i--){
+    const j = rand(0,i);
+    [pool[i],pool[j]] = [pool[j],pool[i]];
+  }
+  const chosen = pool.slice(0,3);
+  const riskyIdx = chosen.findIndex(c=>c.key==="risky");
+  if(riskyIdx === chosen.length-1){
+    [chosen[riskyIdx], chosen[0]] = [chosen[0], chosen[riskyIdx]];
+  }
+
+  return chosen.map(c=>({ label:c.label, sub:c.sub, resolve:c.resolve }));
 }
 
 function openYearChoice(){
@@ -1619,40 +1664,45 @@ function openActionsMenu(){
   }
   let rows = [];
 
-  rows.push({ label:"Entraînement physique", sub:`Force ${state.force} / Vitesse ${state.vitesse} / Endurance ${state.endurance}`, fn:trainPhysical });
-  rows.push({ label:"Étudier", sub:`Intelligence ${state.intelligence}`, fn:trainMind });
-  rows.push({ label:"Socialiser", sub:`Charisme ${state.charisme} · Bonheur`, fn:socialize });
-  rows.push({ label:"Fouiller l'île", sub:`Clés : ${state.keys}`, fn:searchIsland });
+  rows.push({ label:"Entraînement physique", sub:`Force ${state.force} / Vitesse ${state.vitesse} / Endurance ${state.endurance}`, fn:trainPhysical, cost:20 });
+  rows.push({ label:"Étudier", sub:`Intelligence ${state.intelligence}`, fn:trainMind, cost:15 });
+  rows.push({ label:"Socialiser", sub:`Charisme ${state.charisme} · Bonheur`, fn:socialize, cost:15 });
+  rows.push({ label:"Fouiller l'île", sub:`Clés : ${state.keys}`, fn:searchIsland, cost:15 });
 
   if(["pirate","marine","chasseur","revolutionnaire"].includes(state.path)){
-    rows.push({ label:"Chercher un combat", sub:"Tente ta chance contre un adversaire", fn:seekFight });
+    rows.push({ label:"Chercher un combat", sub:"Tente ta chance contre un adversaire", fn:seekFight, cost:25 });
   }
   if(state.path==="pirate"){
-    rows.push({ label:"Chercher un fruit du démon", sub: state.devilFruit? "Déjà obtenu" : "Chance rare de trouver un pouvoir", fn:seekDevilFruit, disabled: !!state.devilFruit });
-    rows.push({ label:"Recruter un·e compagnon·gne", sub:`Équipage : ${state.crew.length}`, fn:recruitCrew });
+    rows.push({ label:"Chercher un fruit du démon", sub: state.devilFruit? "Déjà obtenu" : "Chance rare de trouver un pouvoir", fn:seekDevilFruit, disabled: !!state.devilFruit, cost:20 });
+    rows.push({ label:"Recruter un·e compagnon·gne", sub:`Équipage : ${state.crew.length}`, fn:recruitCrew, cost:15 });
   }
   if(state.islandVault && state.islandVault.island===state.island && state.islandVault.rumorHeard && !state.islandVault.resolved){
     const remaining = state.islandVault.chests.filter(c=>!c.opened).length;
-    rows.push({ label:"Ouvrir les coffres", sub:`🔑 ${state.keys} clé(s) · ${remaining} coffre(s) restant(s)`, fn:openVaultMinigame });
+    rows.push({ label:"Ouvrir les coffres", sub:`🔑 ${state.keys} clé(s) · ${remaining} coffre(s) restant(s)`, fn:openVaultMinigame, cost:10 });
   }
   if(powerScore()>=25 && state.age>=18){
-    rows.push({ label:"S'entraîner au Haki", sub:`Observation ${state.hakiObs} · Armement ${state.hakiArm}`, fn:trainHaki });
+    rows.push({ label:"S'entraîner au Haki", sub:`Observation ${state.hakiObs} · Armement ${state.hakiArm}`, fn:trainHaki, cost:25 });
   }
   if(state.path!=="civil"){
-    rows.push({ label:"Prendre sa retraite", sub:"Terminer ta vie en paix", fn:retire });
+    rows.push({ label:"Prendre sa retraite", sub:"Terminer ta vie en paix", fn:retire, cost:0 });
   }
 
-  const html = rows.map((r,i)=>`
-    <div class="action-row ${r.disabled?'disabled':''}" data-idx="${i}">
+  const html = `<div class="modal-intro">⚡ Énergie disponible : <b>${state.energy}</b>/100</div>` + rows.map((r,i)=>{
+    const tooExpensive = state.energy < r.cost;
+    return `<div class="action-row ${(r.disabled||tooExpensive)?'disabled':''}" data-idx="${i}">
       <div><div class="a-label">${r.label}</div><div class="a-sub">${r.sub}</div></div>
-      <div class="a-val">→</div>
-    </div>`).join("");
+      <div class="a-val">${r.cost>0?'⚡'+r.cost:'→'}</div>
+    </div>`;
+  }).join("");
   openModal("Actions", html);
   document.querySelectorAll("[data-idx]").forEach(el=>{
     el.addEventListener("click", ()=>{
       const idx = +el.dataset.idx;
+      const row = rows[idx];
+      if(state.energy < row.cost) return;
+      state.energy = clamp(state.energy - row.cost, 0, 100);
       closeModal();
-      rows[idx].fn();
+      row.fn();
     });
   });
 }
@@ -2054,6 +2104,7 @@ function renderGame(scrollLog){
   document.getElementById("hudAge").textContent = state.age;
   document.getElementById("barHealth").style.width = state.health+"%";
   document.getElementById("barHappy").style.width = state.happiness+"%";
+  document.getElementById("barEnergy").style.width = state.energy+"%";
   document.getElementById("hudBeli").textContent = fmt(state.beli);
 
   const locLabel = state.island && state.island !== STAGES[state.stage].name
@@ -2160,6 +2211,7 @@ function wire(){
     if(!existing.flags) existing.flags = {};
     if(existing.keys===undefined) existing.keys = 0;
     if(existing.islandVault===undefined) existing.islandVault = null;
+    if(existing.energy===undefined) existing.energy = 100;
     document.getElementById("btnContinue").hidden = false;
     document.getElementById("btnContinue").addEventListener("click", ()=>{
       state = existing;

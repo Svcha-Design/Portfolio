@@ -157,6 +157,7 @@ h1,h2,h3{ font-family:'Archivo Black', system-ui, sans-serif; margin:0; }
 .bar-fill{ height:100%; border-radius:99px; transition:width .3s ease; }
 .fill-health{ background:var(--red); }
 .fill-happy{ background:#4fb9e8; }
+.fill-energy{ background:var(--gold); }
 .gh-money{ display:flex; justify-content:space-between; margin-top:8px; font-size:12px; color:var(--gold); }
 .gh-loc{ margin-top:6px; font-size:11px; color:#9fb3c8; }
 
