@@ -146,39 +146,6 @@ const CHILDHOOD_EVENTS = [
   ], mods:{force:2,vitesse:1,intelligence:1,charisme:1} }
 ];
 
-function pathEvents(path){
-  const common = [
-    { txt:"Une tempête manque de couler le navire, mais l'équipage tient bon.", type:"neutral", mods:{endurance:1} },
-    { txt:"Tu passes la soirée à raconter des histoires avec l'équipage.", type:"good", mods:{happiness:8,charisme:1} },
-    { txt:"Un Roi des Mers surgit de l'eau et s'éloigne sans attaquer, à ton grand soulagement.", type:"neutral", mods:{} },
-    { txt:"Tu perfectionnes ta technique de combat pendant des heures.", type:"neutral", mods:{force:1,vitesse:1} },
-    { txt:"Une île mystérieuse t'offre un moment de répit bienvenu.", type:"good", mods:{happiness:10,health:5} }
-  ];
-  if(path==="pirate") return common.concat([
-    { txt:"Tu pilles un entrepôt de la Marine et files avec le butin.", type:"good", mods:{beli:800,repMarine:-5} },
-    { txt:"Une rumeur sur ta prime circule dans les tavernes.", type:"neutral", mods:{} },
-    { txt:"Tu partages un festin légendaire avec ton équipage.", type:"good", mods:{happiness:15} },
-    { txt:"Un autre équipage pirate te propose une alliance temporaire.", type:"neutral", mods:{charisme:1} }
-  ]);
-  if(path==="marine") return common.concat([
-    { txt:"Tu diriges un exercice de discipline pour les nouvelles recrues.", type:"neutral", mods:{charisme:1} },
-    { txt:"Une mission de patrouille se déroule sans accroc.", type:"good", mods:{beli:300} },
-    { txt:"Tu reçois une lettre de félicitations du quartier général.", type:"good", mods:{happiness:8} }
-  ]);
-  if(path==="chasseur") return common.concat([
-    { txt:"Tu traques un fugitif à travers une ville portuaire animée.", type:"neutral", mods:{vitesse:1} },
-    { txt:"Une prime encaissée te met à l'aise financièrement pour un temps.", type:"good", mods:{beli:600} }
-  ]);
-  if(path==="revolutionnaire") return common.concat([
-    { txt:"Tu aides à organiser la résistance dans un royaume opprimé.", type:"good", mods:{charisme:2,happiness:5} },
-    { txt:"Une opération secrète contre un noble corrompu réussit.", type:"good", mods:{beli:400} }
-  ]);
-  return common.concat([
-    { txt:"Tu tiens ton commerce avec sérieux, la vie suit son cours.", type:"neutral", mods:{beli:250} },
-    { txt:"Tu profites d'une vie tranquille loin des tempêtes de Grand Line.", type:"good", mods:{happiness:6} }
-  ]);
-}
-
 const DEATH_CAUSES = {
   storm: "Ton navire a sombré corps et biens durant une violente tempête.",
   seaking: "Un Roi des Mers a englouti ton navire en un instant.",
@@ -468,7 +435,21 @@ const SPECIAL_EVENTS = [
   }
 ];
 
-let pendingSpecial = null;
+let pendingChoice = null;
+
+function resolvePendingChoice(idx){
+  if(!pendingChoice) return;
+  const pc = pendingChoice;
+  pendingChoice = null;
+  closeModal();
+  pc.onResolve(idx);
+}
+
+function resolvePendingDefault(){
+  if(!pendingChoice) return;
+  const idx = pendingChoice.choices.length>1 ? pendingChoice.choices.length-1 : 0;
+  resolvePendingChoice(idx);
+}
 
 function findSpecialEvent(){
   return SPECIAL_EVENTS.find(e => !state.flags[e.id] && e.condition());
@@ -476,8 +457,11 @@ function findSpecialEvent(){
 
 function triggerSpecialEvent(ev){
   state.flags[ev.id] = true;
-  pendingSpecial = ev;
   addLog(ev.text, "major");
+  pendingChoice = { choices: ev.choices, onResolve:(idx)=>{
+    ev.choices[idx].resolve();
+    finishAgeUp();
+  }};
   const html = ev.choices.map((c,i)=>`
     <div class="action-row" data-choice="${i}">
       <div><div class="a-label">${c.label}</div>${c.sub ? `<div class="a-sub">${c.sub}</div>` : ''}</div>
@@ -485,29 +469,10 @@ function triggerSpecialEvent(ev){
     </div>`).join("");
   openModal(ev.title, html);
   document.querySelectorAll("[data-choice]").forEach(el=>{
-    el.addEventListener("click", ()=>{
-      resolveSpecialChoice(ev, +el.dataset.choice);
-    });
+    el.addEventListener("click", ()=> resolvePendingChoice(+el.dataset.choice));
   });
   save();
   renderGame(true);
-}
-
-function resolveSpecialChoice(ev, idx){
-  pendingSpecial = null;
-  ev.choices[idx].resolve();
-  checkDeath();
-  checkBountyReveal();
-  closeModal();
-  save();
-  renderGame(true);
-}
-
-function resolvePendingDefault(){
-  if(!pendingSpecial) return;
-  const ev = pendingSpecial;
-  const idx = ev.choices.length>1 ? ev.choices.length-1 : 0;
-  resolveSpecialChoice(ev, idx);
 }
 
 /* ================= STATE ================= */
@@ -694,18 +659,20 @@ function ageUp(){
   if(state.age>0) state.health = clamp(state.health - (state.age>55 ? rand(1,4) : 0), 0, 100);
 
   if(state.age <= 16){
-    const pool = CHILDHOOD_EVENTS.find(e=>state.age>=e.min && state.age<=e.max) || CHILDHOOD_EVENTS[CHILDHOOD_EVENTS.length-1];
-    const txt = pick(pool.texts);
-    applyMods(pool.mods);
-    addLog(txt, "neutral");
-  } else {
-    if(!state.pathChosen){
-      addLog("Tu es en âge de choisir la voie de ta vie.", "major");
-    } else {
-      runPathYear();
-    }
+    openChildChoice();
+    return;
   }
+  if(!state.pathChosen){
+    addLog("Tu es en âge de choisir la voie de ta vie.", "major");
+    finishAgeUp();
+    return;
+  }
+  const special = findSpecialEvent();
+  if(special){ triggerSpecialEvent(special); return; }
+  openYearChoice();
+}
 
+function finishAgeUp(){
   checkDeath();
   checkBountyReveal();
   save();
@@ -716,15 +683,122 @@ function ageUp(){
   }
 }
 
-function runPathYear(){
-  const special = findSpecialEvent();
-  if(special){ triggerSpecialEvent(special); return; }
+function childYearGain(){
+  if(state.age<=6) return 1;
+  if(state.age<=12) return 2;
+  return 3;
+}
 
-  const pool = pathEvents(state.path);
-  const ev = pick(pool);
-  applyMods(ev.mods);
-  addLog(ev.txt, ev.type);
+function buildChildChoices(){
+  const g = childYearGain();
+  return [
+    { label:"S'entraîner physiquement", sub:`Force +${g} · Vitesse +${g} · Bonheur -3`,
+      resolve(){
+        applyMods({force:g, vitesse:g, happiness:-3});
+        addLog("Tu passes l'année à t'entraîner sans relâche.", "neutral");
+      }
+    },
+    { label:"Étudier et lire", sub:`Intelligence +${g+1} · Bonheur -3`,
+      resolve(){
+        applyMods({intelligence:g+1, happiness:-3});
+        addLog("Tu passes l'année plongé·e dans les livres et les cartes marines.", "neutral");
+      }
+    },
+    { label:"Jouer avec les autres enfants", sub:`Charisme +${g} · Bonheur +6`,
+      resolve(){
+        applyMods({charisme:g, happiness:6});
+        addLog("Tu passes une année insouciante à jouer avec les enfants du village.", "neutral");
+      }
+    }
+  ];
+}
 
+function openChildChoice(){
+  const bracket = CHILDHOOD_EVENTS.find(e=>state.age>=e.min && state.age<=e.max) || CHILDHOOD_EVENTS[CHILDHOOD_EVENTS.length-1];
+  const intro = pick(bracket.texts);
+  const choices = buildChildChoices();
+  pendingChoice = { choices, onResolve:(idx)=>{ choices[idx].resolve(); finishAgeUp(); } };
+
+  const html = `<p class="modal-intro">${intro}</p>` + choices.map((c,i)=>`
+    <div class="action-row" data-choice="${i}">
+      <div><div class="a-label">${c.label}</div><div class="a-sub">${c.sub}</div></div>
+      <div class="a-val">→</div>
+    </div>`).join("");
+  openModal("Cette année...", html);
+  document.querySelectorAll("[data-choice]").forEach(el=>{
+    el.addEventListener("click", ()=> resolvePendingChoice(+el.dataset.choice));
+  });
+}
+
+const PATH_YEAR_LABELS = {
+  pirate: { train:"S'entraîner dur avec l'équipage", risky:"Tenter un coup d'éclat risqué" },
+  marine: { train:"Suivre un entraînement rigoureux", risky:"Mener une opération audacieuse" },
+  chasseur: { train:"Peaufiner tes techniques de traque", risky:"Traquer une prime dangereuse" },
+  revolutionnaire: { train:"T'endurcir pour la cause", risky:"Mener une action clandestine risquée" },
+  civil: { train:"Te former à un nouveau savoir-faire", risky:"Investir dans une affaire risquée" }
+};
+
+const PATH_TRAIN_MODS = {
+  pirate: {force:2, vitesse:2}, marine: {force:2, intelligence:1},
+  chasseur: {vitesse:2, force:1}, revolutionnaire: {charisme:2, intelligence:1},
+  civil: {intelligence:2}
+};
+
+function buildYearChoices(){
+  const path = state.path;
+  const labels = PATH_YEAR_LABELS[path] || PATH_YEAR_LABELS.civil;
+  const trainMods = PATH_TRAIN_MODS[path] || PATH_TRAIN_MODS.civil;
+
+  return [
+    { label:labels.train, sub:"Progression sûre, mais fatigant",
+      resolve(){
+        applyMods({...trainMods, happiness:-4});
+        addLog("Tu consacres ton année à progresser avec sérieux.", "neutral");
+      }
+    },
+    { label:labels.risky, sub:"Risqué : grand gain ou revers cuisant",
+      resolve(){
+        const danger = currentStage().danger;
+        const enemyPower = rand(15,30) * danger;
+        const winProb = clamp(0.5 + (powerScore()-enemyPower)/200, 0.15, 0.85);
+        if(Math.random() < winProb){
+          const gain = rand(500,2000) + danger*300;
+          if(path==="pirate") state.bounty += gain;
+          if(path==="marine" && Math.random()<0.3) state.marineRank = Math.min(MARINE_RANKS.length-1, state.marineRank+1);
+          state.beli += Math.round(gain/2);
+          state.happiness = clamp(state.happiness+6,0,100);
+          addLog("Ton audace paie : l'année se termine sur un vrai coup d'éclat.", "good");
+        } else {
+          state.health = clamp(state.health - rand(12,28), 0, 100);
+          addLog("Ton coup de poker tourne mal, tu en gardes des séquelles.", "bad");
+        }
+      }
+    },
+    { label:"Profiter de la vie", sub:"Bonheur & liens sociaux — l'option par défaut",
+      resolve(){
+        applyMods({happiness:12, charisme:1});
+        addLog("Tu prends le temps de vivre, de rire, et de tisser des liens.", "good");
+      }
+    }
+  ];
+}
+
+function openYearChoice(){
+  const choices = buildYearChoices();
+  pendingChoice = { choices, onResolve:(idx)=>{ choices[idx].resolve(); afterYearChoiceContinue(); } };
+
+  const html = choices.map((c,i)=>`
+    <div class="action-row" data-choice="${i}">
+      <div><div class="a-label">${c.label}</div><div class="a-sub">${c.sub}</div></div>
+      <div class="a-val">→</div>
+    </div>`).join("");
+  openModal("Comment passer cette année ?", html);
+  document.querySelectorAll("[data-choice]").forEach(el=>{
+    el.addEventListener("click", ()=> resolvePendingChoice(+el.dataset.choice));
+  });
+}
+
+function afterYearChoiceContinue(){
   // navigation vers une autre île de la même région
   const islandPool = ISLANDS[state.stage];
   if(islandPool && islandPool.length>1 && Math.random()<0.22){
@@ -743,6 +817,7 @@ function runPathYear(){
       addLog(`Tu es promu·e ${MARINE_RANKS[state.marineRank]} !`, "major");
       if(state.marineRank===MARINE_RANKS.length-1){
         winEnding("marine");
+        finishAgeUp();
         return;
       }
     }
@@ -754,7 +829,7 @@ function runPathYear(){
   if(Math.random() < Math.max(0,hazardChance)){
     triggerHazard(danger);
   }
-  if(!state.alive) return;
+  if(!state.alive){ finishAgeUp(); return; }
 
   // laugh tale victory check for pirates
   if(state.path==="pirate" && state.stage===5){
@@ -763,6 +838,8 @@ function runPathYear(){
       winEnding("pirate");
     }
   }
+
+  finishAgeUp();
 }
 
 function triggerHazard(danger){
@@ -1286,11 +1363,11 @@ function wire(){
   document.getElementById("btnStatus").addEventListener("click", openStatus);
 
   document.getElementById("modalClose").addEventListener("click", ()=>{
-    if(pendingSpecial){ resolvePendingDefault(); } else { closeModal(); }
+    if(pendingChoice){ resolvePendingDefault(); } else { closeModal(); }
   });
   document.getElementById("modalOverlay").addEventListener("click", (e)=>{
     if(e.target.id==="modalOverlay"){
-      if(pendingSpecial){ resolvePendingDefault(); } else { closeModal(); }
+      if(pendingChoice){ resolvePendingDefault(); } else { closeModal(); }
     }
   });
 
