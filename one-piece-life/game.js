@@ -435,6 +435,99 @@ const SPECIAL_EVENTS = [
   }
 ];
 
+const CHILD_SPECIAL_EVENTS = [
+  {
+    id:"child_marine_capture",
+    title:"Une arrestation brutale",
+    condition:()=> state.age>=5 && state.age<=14,
+    text:"Des navires de la Marine accostent sans prévenir. Des soldats accusent ta famille de complicité avec des pirates et emmènent tes parents sous tes yeux, menottés.",
+    choices:[
+      { label:"Supplier les soldats de les relâcher", sub:"Risqué, mais tu ne peux pas rester sans rien faire",
+        resolve(){
+          if(Math.random()<0.4){
+            addLog("Ton insistance touche un officier hésitant : tes parents sont finalement relâchés, sous surveillance.", "good");
+            applyMods({charisme:3, happiness:8});
+          } else {
+            addLog("Les soldats t'écartent sans ménagement. Tes parents sont emmenés malgré tes cris.", "bad");
+            applyMods({happiness:-15});
+            state.repPirate += 5;
+          }
+        }
+      },
+      { label:"Te cacher, impuissant·e", sub:"",
+        resolve(){
+          addLog("Tu regardes la scène depuis ta cachette, le cœur brisé par ton impuissance. Ce jour restera gravé en toi.", "bad");
+          applyMods({happiness:-10, chance:3});
+          state.repPirate += 3;
+        }
+      }
+    ]
+  },
+  {
+    id:"child_pirate_takeover",
+    title:"Le village sous contrôle pirate",
+    condition:()=> state.age>=4 && state.age<=15,
+    text:"Un équipage de pirates débarque et prend le contrôle du village pendant plusieurs semaines, pillant les réserves et effrayant les habitants.",
+    choices:[
+      { label:"Observer les pirates avec fascination plutôt que peur", sub:"",
+        resolve(){
+          addLog("Loin d'être terrifié·e, tu observes leur assurance et leur liberté avec une fascination grandissante.", "neutral");
+          applyMods({charisme:3, chance:3});
+        }
+      },
+      { label:"Te cacher avec ta famille jusqu'à leur départ", sub:"",
+        resolve(){
+          addLog("Tu restes caché·e de longues semaines, rongé·e par la peur, jusqu'à ce que les pirates repartent enfin.", "neutral");
+          applyMods({endurance:3, happiness:-6});
+        }
+      }
+    ]
+  },
+  {
+    id:"child_devilfruit",
+    title:"Un fruit étrange",
+    condition:()=> state.age>=6 && state.age<=12 && !state.devilFruit,
+    text:"En jouant près du port, tu trouves un fruit étrange à l'écorce spiralée, abandonné dans une caisse défoncée.",
+    choices:[
+      { label:"Le manger, intrigué·e", sub:"Un choix qui pourrait tout changer",
+        resolve(){
+          const fruit = pick(DEVIL_FRUITS);
+          state.devilFruit = fruit;
+          applyMods(fruit.mods);
+          applyMods({endurance:-3});
+          addLog(`Sans réfléchir, tu croques dedans. Un goût infect... et une sensation étrange t'envahit : tu viens de manger le ${fruit.name} (${fruit.type}) ! ${fruit.desc}`, "major");
+        }
+      },
+      { label:"Le laisser, ça a l'air dangereux", sub:"",
+        resolve(){
+          addLog("Ta prudence l'emporte : tu laisses ce fruit suspect là où tu l'as trouvé.", "neutral");
+          applyMods({intelligence:2});
+        }
+      }
+    ]
+  },
+  {
+    id:"child_mentor",
+    title:"Un vieux loup de mer",
+    condition:()=> state.age>=8 && state.age<=15,
+    text:"Un vieux marin retraité, épuisé par des décennies en mer, s'installe près de chez toi. Il propose de t'enseigner ce qu'il sait, à condition que tu sois sérieux·se.",
+    choices:[
+      { label:"Accepter son enseignement", sub:"Entraînement exigeant",
+        resolve(){
+          addLog("Le vieux marin t'enseigne sans relâche pendant des mois. Ses leçons resteront gravées en toi.", "good");
+          applyMods({force:4, intelligence:3, happiness:-3});
+        }
+      },
+      { label:"Décliner, tu préfères rester avec tes amis", sub:"",
+        resolve(){
+          addLog("Tu préfères profiter de ton enfance plutôt que de t'astreindre à un entraînement strict.", "neutral");
+          applyMods({charisme:2, happiness:5});
+        }
+      }
+    ]
+  }
+];
+
 const DISCOVERY_EVENTS = [
   {
     id:"haki_awaken",
@@ -512,6 +605,13 @@ function resolvePendingDefault(){
 
 function findSpecialEvent(){
   return SPECIAL_EVENTS.find(e => !state.flags[e.id] && e.condition());
+}
+
+function findChildSpecialEvent(){
+  if(Math.random() >= 0.10) return null;
+  const eligible = CHILD_SPECIAL_EVENTS.filter(e => !state.flags[e.id] && e.condition());
+  if(!eligible.length) return null;
+  return pick(eligible);
 }
 
 function triggerSpecialEvent(ev){
@@ -719,6 +819,8 @@ function ageUp(){
   if(state.age>0) state.health = clamp(state.health - (state.age>55 ? rand(1,4) : 0), 0, 100);
 
   if(state.age <= 16){
+    const childSpecial = findChildSpecialEvent();
+    if(childSpecial){ triggerSpecialEvent(childSpecial); return; }
     openChildChoice();
     return;
   }
@@ -755,29 +857,41 @@ const CHILD_STUDY_LABELS = ["Étudier et lire", "Te plonger dans les livres", "A
 const CHILD_STUDY_LOGS = ["Tu passes l'année plongé·e dans les livres et les cartes marines.", "Tu apprends patiemment à déchiffrer les cartes de navigation.", "Les récits des vieux loups de mer nourrissent ta curiosité.", "Tu dévores tout ce qui te tombe sous la main."];
 const CHILD_PLAY_LABELS = ["Jouer avec les autres enfants", "Profiter de ton enfance", "Passer du temps avec tes amis", "Explorer les environs en t'amusant"];
 const CHILD_PLAY_LOGS = ["Tu passes une année insouciante à jouer avec les enfants du village.", "Tu ris, tu cours, tu profites simplement d'être enfant.", "Les journées passent vite entre amis, sans souci.", "Tu explores les environs, curieux·se de tout."];
+const CHILD_EXPLORE_LABELS = ["Explorer les environs", "Partir en exploration au bord de l'eau", "Fouiner dans les recoins du village", "Suivre un sentier inconnu"];
+const CHILD_EXPLORE_LOGS = ["Tu explores chaque recoin du village, curieux·se de tout.", "Une vieille pièce trouvée sur la plage te met de bonne humeur.", "Tu rentres les poches pleines de babioles ramassées ici et là.", "Ton sens de l'exploration commence déjà à se dessiner."];
+const CHILD_HELP_LABELS = ["Aider ta famille au quotidien", "Donner un coup de main à la maison", "Participer aux tâches du village", "Se rendre utile auprès des adultes"];
+const CHILD_HELP_LOGS = ["Tu aides ta famille du mieux que tu peux, jour après jour.", "Les adultes du village apprécient ton sérieux pour ton âge.", "Tu apprends beaucoup en donnant un coup de main partout où tu peux.", "Ta contribution, même modeste, ne passe pas inaperçue."];
+const CHILD_DAYDREAM_LABELS = ["Rêvasser en observant les bateaux au loin", "Imaginer de grandes aventures", "Contempler l'horizon pendant des heures", "Te perdre dans tes pensées"];
+const CHILD_DAYDREAM_LOGS = ["Tu passes des heures à observer les bateaux disparaître à l'horizon, l'esprit ailleurs.", "Tu imagines déjà les aventures qui t'attendent un jour.", "Perdu·e dans tes pensées, tu rêves d'un ailleurs.", "Ces rêveries nourrissent en toi une soif d'aventure grandissante."];
 
 function buildChildChoices(){
   const g = childYearGain();
-  return [
-    { label:pick(CHILD_TRAIN_LABELS), sub:`Force +${g} · Vitesse +${g} · Bonheur -3`,
-      resolve(){
-        applyMods({force:g, vitesse:g, happiness:-3});
-        addLog(pick(CHILD_TRAIN_LOGS), "neutral");
-      }
-    },
-    { label:pick(CHILD_STUDY_LABELS), sub:`Intelligence +${g+1} · Bonheur -3`,
-      resolve(){
-        applyMods({intelligence:g+1, happiness:-3});
-        addLog(pick(CHILD_STUDY_LOGS), "neutral");
-      }
-    },
-    { label:pick(CHILD_PLAY_LABELS), sub:`Charisme +${g} · Bonheur +6`,
-      resolve(){
-        applyMods({charisme:g, happiness:6});
-        addLog(pick(CHILD_PLAY_LOGS), "neutral");
-      }
-    }
+  const pool = [
+    { labels:CHILD_TRAIN_LABELS, logs:CHILD_TRAIN_LOGS, sub:`Force +${g} · Vitesse +${g} · Bonheur -3`,
+      apply(){ applyMods({force:g, vitesse:g, happiness:-3}); } },
+    { labels:CHILD_STUDY_LABELS, logs:CHILD_STUDY_LOGS, sub:`Intelligence +${g+1} · Bonheur -3`,
+      apply(){ applyMods({intelligence:g+1, happiness:-3}); } },
+    { labels:CHILD_PLAY_LABELS, logs:CHILD_PLAY_LOGS, sub:`Charisme +${g} · Bonheur +6`,
+      apply(){ applyMods({charisme:g, happiness:6}); } },
+    { labels:CHILD_EXPLORE_LABELS, logs:CHILD_EXPLORE_LOGS, sub:`Chance +${g} · Beli +${100*g}`,
+      apply(){ applyMods({chance:g, beli:100*g}); } },
+    { labels:CHILD_HELP_LABELS, logs:CHILD_HELP_LOGS, sub:`Endurance +${g} · Beli +${80*g}`,
+      apply(){ applyMods({endurance:g, beli:80*g}); } },
+    { labels:CHILD_DAYDREAM_LABELS, logs:CHILD_DAYDREAM_LOGS, sub:"Bonheur +8 · une stat au hasard +1",
+      apply(){ applyMods({ [pick(["force","vitesse","endurance","intelligence","charisme"])]:1, happiness:8 }); } }
   ];
+  for(let i=pool.length-1;i>0;i--){
+    const j = rand(0,i);
+    [pool[i],pool[j]] = [pool[j],pool[i]];
+  }
+  return pool.slice(0,3).map(entry=>({
+    label: pick(entry.labels),
+    sub: entry.sub,
+    resolve(){
+      entry.apply();
+      addLog(pick(entry.logs), "neutral");
+    }
+  }));
 }
 
 function openChildChoice(){
@@ -914,10 +1028,14 @@ function afterYearChoiceContinue(){
   const danger = currentStage().danger;
   const hazardChance = 0.06 * danger + (state.path==="civil" ? -0.05 : 0);
   if(Math.random() < Math.max(0,hazardChance)){
-    triggerHazard(danger);
-  } else {
-    checkDiscovery();
+    triggerHazard(danger, finishYearTail);
+    return;
   }
+  checkDiscovery();
+  finishYearTail();
+}
+
+function finishYearTail(){
   if(!state.alive){ finishAgeUp(); return; }
 
   // laugh tale victory check for pirates
@@ -931,17 +1049,18 @@ function afterYearChoiceContinue(){
   finishAgeUp();
 }
 
-function triggerHazard(danger){
+function triggerHazard(danger, onDone){
   const roll = Math.random();
-  if(roll < 0.35){
+  if(roll < 0.20){
     const dmg = rand(5,10)*danger*0.5;
     state.health = clamp(state.health - dmg, 0, 100);
     addLog("Une bagarre éclate et tu encaisses quelques coups.", "bad");
-  } else if(roll < 0.6 && state.path!=="civil"){
-    const power = powerScore();
+    onDone();
+  } else if(roll < 0.40 && state.path!=="civil"){
     const enemyPower = rand(10,25) * danger;
     resolveFight(enemyPower, "un adversaire redoutable croisé en chemin");
-  } else if(roll < 0.8){
+    onDone();
+  } else if(roll < 0.60){
     if(state.devilFruit && Math.random()<0.4){
       state.health = clamp(state.health - rand(10,20), 0, 100);
       addLog("Tombé·e à l'eau, ton fruit du démon te paralyse quelques instants terrifiants.", "bad");
@@ -951,10 +1070,13 @@ function triggerHazard(danger){
       addLog("Une tempête violente secoue ton navire.", "bad");
       if(Math.random()<0.05*danger){ death("storm"); }
     }
+    onDone();
+  } else if(roll < 0.80){
+    addLog("Un Roi des Mers surgit et fonce droit sur ton navire !", "bad");
+    startShipDodgeGame(danger, onDone);
   } else {
-    state.health = clamp(state.health - rand(10,25), 0, 100);
-    addLog("Un Roi des Mers attaque soudainement !", "bad");
-    if(Math.random()<0.05*danger){ death("seaking"); }
+    addLog("Une frégate de la Marine te repère et ouvre le feu !", "bad");
+    startHolePlugGame(danger, onDone);
   }
 }
 
@@ -986,6 +1108,205 @@ function resolveFight(enemyPower, enemyLabel){
       death("execution");
     }
   }
+}
+
+/* ================= MINI-JEUX : ATTAQUES EN MER ================= */
+
+let miniGameActive = false;
+
+function setMiniGameActive(active){
+  miniGameActive = active;
+  const closeBtn = document.getElementById("modalClose");
+  if(closeBtn) closeBtn.classList.toggle("disabled", active);
+}
+
+let shipGame = null;
+let holeGame = null;
+
+function shipDodgeHTML(){
+  return `
+    <p class="modal-intro">Une frégate de la Marine ouvre le feu ! Regarde où l'impact ⚠️ est annoncé et déplace ton navire ailleurs.</p>
+    <div class="ship-lanes" id="shipLanes">
+      <div class="lane" data-lane="0"></div>
+      <div class="lane" data-lane="1"></div>
+      <div class="lane" data-lane="2"></div>
+    </div>
+    <div class="minigame-status" id="shipStatus">Vague 0/6</div>
+    <div class="minigame-controls">
+      <button class="btn btn-chip" data-move="0">◀ Bâbord</button>
+      <button class="btn btn-chip" data-move="1">Centre</button>
+      <button class="btn btn-chip" data-move="2">Tribord ▶</button>
+    </div>
+  `;
+}
+
+function renderShipGame(){
+  const g = shipGame;
+  if(!g) return;
+  for(let i=0;i<3;i++){
+    const el = document.querySelector(`.lane[data-lane="${i}"]`);
+    if(!el) continue;
+    el.classList.toggle("has-ship", g.lane===i);
+    el.classList.toggle("incoming", g.warnLane===i);
+    el.textContent = g.lane===i ? "⛵" : (g.warnLane===i ? "⚠️" : "");
+  }
+  const statusEl = document.getElementById("shipStatus");
+  if(statusEl) statusEl.textContent = `Vague ${Math.min(g.wave,g.totalWaves)}/${g.totalWaves} — Touché·e : ${g.hits}`;
+}
+
+function onShipMove(laneIdx){
+  if(!shipGame) return;
+  shipGame.lane = laneIdx;
+  renderShipGame();
+}
+
+function shipGameNextWave(){
+  const g = shipGame;
+  if(!g) return;
+  g.wave++;
+  if(g.wave > g.totalWaves){ endShipGame(); return; }
+  g.warnLane = rand(0,2);
+  renderShipGame();
+  g.timeoutId = setTimeout(()=>{
+    if(!shipGame) return;
+    if(g.lane===g.warnLane){ g.hits++; } else { g.dodges++; }
+    g.warnLane = -1;
+    renderShipGame();
+    g.timeoutId = setTimeout(shipGameNextWave, 400);
+  }, 1300);
+}
+
+function startShipDodgeGame(danger, onDone){
+  setMiniGameActive(true);
+  shipGame = { lane:1, warnLane:-1, hits:0, dodges:0, wave:0, totalWaves:6, danger, onDone };
+  openModal("Sous le feu !", shipDodgeHTML());
+  document.querySelectorAll("[data-move]").forEach(btn=>{
+    btn.addEventListener("click", ()=> onShipMove(+btn.dataset.move));
+  });
+  renderShipGame();
+  setTimeout(shipGameNextWave, 600);
+}
+
+function endShipGame(){
+  const g = shipGame;
+  shipGame = null;
+  setMiniGameActive(false);
+  if(g.hits===0){
+    addLog("Manœuvre parfaite : pas un seul tir ne t'a touché !", "good");
+    state.happiness = clamp(state.happiness+6,0,100);
+  } else {
+    const dmg = g.hits * rand(6,10);
+    state.health = clamp(state.health-dmg,0,100);
+    addLog(`Tu es touché·e ${g.hits} fois par les tirs ennemis avant de t'en sortir.`, g.hits>=4 ? "bad" : "neutral");
+  }
+  checkDeath();
+  save();
+  renderGame(true);
+  closeModal();
+  if(g.onDone) g.onDone();
+}
+
+function holePlugHTML(){
+  return `
+    <p class="modal-intro">Les tirs de la Marine ont crevé la coque ! Colmate les brèches avant qu'elles n'inondent le navire.</p>
+    <div class="minigame-status" id="holeStatus">Colmatées : 0 · Inondées : 0</div>
+    <div class="hole-grid" id="holeGrid">
+      ${Array(9).fill(0).map((_,i)=>`<button class="hole-cell" data-cell="${i}"></button>`).join("")}
+    </div>
+  `;
+}
+
+function renderHoleCell(i){
+  const el = document.querySelector(`.hole-cell[data-cell="${i}"]`);
+  if(!el || !holeGame) return;
+  const c = holeGame.cells[i];
+  el.classList.toggle("active", c.active);
+  el.textContent = c.active ? "🕳️" : "";
+}
+
+function updateHoleStatus(){
+  const g = holeGame;
+  if(!g) return;
+  const el = document.getElementById("holeStatus");
+  if(el) el.textContent = `Colmatées : ${g.plugged} · Inondées : ${g.flooded}`;
+}
+
+function spawnHole(){
+  const g = holeGame;
+  if(!g) return;
+  if(g.spawned >= g.totalHoles){
+    clearInterval(g.intervalId);
+    checkHoleGameEnd();
+    return;
+  }
+  const inactive = g.cells.map((c,i)=>({c,i})).filter(o=>!o.c.active);
+  if(!inactive.length) return;
+  const target = pick(inactive);
+  g.spawned++;
+  target.c.active = true;
+  renderHoleCell(target.i);
+  target.c.timeoutId = setTimeout(()=>{
+    if(!holeGame || !target.c.active) return;
+    target.c.active = false;
+    g.flooded++;
+    renderHoleCell(target.i);
+    updateHoleStatus();
+    checkHoleGameEnd();
+  }, 1400);
+}
+
+function onHoleClick(i){
+  const g = holeGame;
+  if(!g) return;
+  const c = g.cells[i];
+  if(!c.active) return;
+  clearTimeout(c.timeoutId);
+  c.active = false;
+  g.plugged++;
+  renderHoleCell(i);
+  updateHoleStatus();
+  checkHoleGameEnd();
+}
+
+function checkHoleGameEnd(){
+  const g = holeGame;
+  if(!g) return;
+  if(g.spawned>=g.totalHoles && (g.plugged+g.flooded)>=g.spawned){
+    endHoleGame();
+  }
+}
+
+function startHolePlugGame(danger, onDone){
+  setMiniGameActive(true);
+  holeGame = {
+    cells: Array(9).fill(null).map(()=>({active:false, timeoutId:null})),
+    plugged:0, flooded:0, spawned:0, totalHoles:8, danger, onDone
+  };
+  openModal("Voie d'eau !", holePlugHTML());
+  document.querySelectorAll(".hole-cell").forEach(btn=>{
+    btn.addEventListener("click", ()=> onHoleClick(+btn.dataset.cell));
+  });
+  holeGame.intervalId = setInterval(spawnHole, 800);
+  spawnHole();
+}
+
+function endHoleGame(){
+  const g = holeGame;
+  holeGame = null;
+  setMiniGameActive(false);
+  if(g.flooded===0){
+    addLog("Tu colmates chaque brèche à temps : le navire reste sec !", "good");
+    state.happiness = clamp(state.happiness+6,0,100);
+  } else {
+    const dmg = g.flooded * rand(5,9);
+    state.health = clamp(state.health-dmg,0,100);
+    addLog(`${g.flooded} brèche(s) inondée(s) avant que tu ne les colmates : la coque encaisse.`, g.flooded>=4 ? "bad" : "neutral");
+  }
+  checkDeath();
+  save();
+  renderGame(true);
+  closeModal();
+  if(g.onDone) g.onDone();
 }
 
 /* ================= DEATH / ENDINGS ================= */
@@ -1622,10 +1943,12 @@ function wire(){
   document.getElementById("btnStatus").addEventListener("click", openStatus);
 
   document.getElementById("modalClose").addEventListener("click", ()=>{
+    if(miniGameActive) return;
     if(pendingChoice){ resolvePendingDefault(); } else { closeModal(); }
   });
   document.getElementById("modalOverlay").addEventListener("click", (e)=>{
     if(e.target.id==="modalOverlay"){
+      if(miniGameActive) return;
       if(pendingChoice){ resolvePendingDefault(); } else { closeModal(); }
     }
   });
