@@ -334,6 +334,34 @@ h1,h2,h3{ font-family:'Archivo Black', system-ui, sans-serif; margin:0; }
 .hole-cell.active{ background:#3a1414; border-color:var(--red); animation:lanePulse .4s ease-in-out infinite alternate; }
 .hole-cell:active{ transform:scale(.94); }
 
+/* ---------- SYSTÈME DE COMBAT ---------- */
+.battle-fighters{ display:flex; align-items:center; gap:8px; }
+.battle-side{ flex:1; display:flex; flex-direction:column; gap:4px; }
+.battle-side:last-child{ align-items:flex-end; text-align:right; }
+.battle-vs{ font-size:18px; padding:0 2px; flex-shrink:0; }
+.battle-name{ font-size:12.5px; font-weight:700; color:var(--white); }
+.battle-sub{ font-size:11px; color:#9fb3c8; }
+.hp-track{ width:100%; height:9px; background:#0a2338; border-radius:99px; overflow:hidden; }
+.hp-track .hp-fill{ height:100%; background:var(--green); transition:width .3s ease; }
+.hp-track.enemy .hp-fill{ background:var(--red); }
+.hp-track.stamina{ flex:1; }
+.hp-track.stamina .hp-fill{ background:#4fb9e8; }
+
+.stamina-row{ display:flex; align-items:center; gap:8px; font-size:11px; color:#9fb3c8; margin-top:10px; }
+
+.battle-feed{
+  margin-top:10px; min-height:70px; max-height:90px; overflow-y:auto;
+  background:#0c2135; border-radius:10px; padding:8px 10px;
+  display:flex; flex-direction:column; gap:4px;
+  font-size:12px; color:#dbe6f2; line-height:1.4;
+}
+
+.battle-actions{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.battle-move{ flex:1 1 45%; display:flex; flex-direction:column; align-items:center; gap:2px; padding:10px 6px; }
+.move-label{ font-size:12px; font-weight:600; }
+.move-cost{ font-size:10px; color:var(--gold); }
+.battle-move.disabled{ opacity:.35; pointer-events:none; }
+
 .stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .stat-box{ background:var(--sea); border-radius:12px; padding:10px 12px; }
 .stat-box .s-name{ font-size:11px; color:#9fb3c8; }

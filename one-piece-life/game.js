@@ -1058,8 +1058,7 @@ function triggerHazard(danger, onDone){
     onDone();
   } else if(roll < 0.40 && state.path!=="civil"){
     const enemyPower = rand(10,25) * danger;
-    resolveFight(enemyPower, "un adversaire redoutable croisé en chemin");
-    onDone();
+    startBattle(enemyPower, "un adversaire redoutable croisé en chemin", onDone);
   } else if(roll < 0.60){
     if(state.devilFruit && Math.random()<0.4){
       state.health = clamp(state.health - rand(10,20), 0, 100);
@@ -1080,34 +1079,238 @@ function triggerHazard(danger, onDone){
   }
 }
 
-function resolveFight(enemyPower, enemyLabel){
-  const myPower = powerScore();
-  const winProb = clamp(0.5 + (myPower-enemyPower)/200, 0.08, 0.92);
-  const win = Math.random() < winProb;
-  if(win){
-    const gain = rand(200,1500) + enemyPower*10;
-    if(state.path==="pirate"){ state.bounty += gain; }
-    state.beli += Math.round(gain/2);
-    state.happiness = clamp(state.happiness+5,0,100);
-    addLog(`Tu triomphes de ${enemyLabel} ! Ta réputation grandit.`, "good");
-    if(Math.random()<0.3){
-      state.keys += 1;
-      addLog("Tu trouves une clé étrange sur ton adversaire vaincu.", "neutral");
+/* ================= SYSTÈME DE COMBAT ================= */
+
+let battle = null;
+
+function fruitPower(){
+  if(!state.devilFruit) return 0;
+  const m = state.devilFruit.mods;
+  return (m.force||0) + (m.vitesse||0) + (m.endurance||0) + (m.intelligence||0) + (m.charisme||0);
+}
+
+function getBattleMoves(){
+  const moves = [{ id:"basic", label:"Coup basique", cost:12 }];
+  if(state.devilFruit){
+    moves.push({ id:"fruit", label:`Fruit : ${state.devilFruit.name}`, cost:30 });
+  }
+  if(state.hakiArm>0) moves.push({ id:"armement", label:"Haki Armement", cost:25 });
+  if(state.hakiObs>0) moves.push({ id:"observation", label:"Haki Observation", cost:20 });
+  moves.push({ id:"guard", label:"Défendre", cost:0 });
+  moves.push({ id:"flee", label:"Fuir", cost:0 });
+  return moves;
+}
+
+const BATTLE_BASIC_LOGS = ["Tu frappes de toutes tes forces.", "Un coup net atteint l'adversaire.", "Tu enchaînes les coups avec détermination.", "Ton attaque porte."];
+
+function battleHTML(){
+  const b = battle;
+  const hpPct = clamp(state.health,0,100);
+  const enemyPct = Math.round(clamp(b.enemyHP,0,b.enemyMaxHP)/b.enemyMaxHP*100);
+  const stamPct = Math.round(clamp(b.stamina,0,b.maxStamina)/b.maxStamina*100);
+  return `
+    <div class="battle-fighters">
+      <div class="battle-side">
+        <div class="battle-name">${state.name}</div>
+        <div class="hp-track"><div class="hp-fill" style="width:${hpPct}%"></div></div>
+        <div class="battle-sub">${Math.max(0,Math.round(state.health))} PV</div>
+      </div>
+      <div class="battle-vs">⚔️</div>
+      <div class="battle-side">
+        <div class="battle-name">${b.enemyLabel}</div>
+        <div class="hp-track enemy"><div class="hp-fill" style="width:${enemyPct}%"></div></div>
+        <div class="battle-sub">${Math.max(0,Math.round(b.enemyHP))} PV</div>
+      </div>
+    </div>
+    <div class="stamina-row">
+      <span>⚡ Endurance</span>
+      <div class="hp-track stamina"><div class="hp-fill" style="width:${stamPct}%"></div></div>
+    </div>
+    <div class="battle-feed" id="battleFeed">${b.feed.map(l=>`<div>${l}</div>`).join("")}</div>
+    <div class="battle-actions" id="battleActions">${battleActionsHTML()}</div>
+  `;
+}
+
+function battleActionsHTML(){
+  return getBattleMoves().map(m=>{
+    const disabled = m.cost > battle.stamina;
+    return `<button class="btn btn-chip battle-move ${disabled?'disabled':''}" data-move="${m.id}" ${disabled?'disabled':''}>
+      <span class="move-label">${m.label}</span>${m.cost>0?`<span class="move-cost">⚡${m.cost}</span>`:''}
+    </button>`;
+  }).join("");
+}
+
+function wireBattleButtons(){
+  document.querySelectorAll(".battle-move:not(.disabled)").forEach(btn=>{
+    btn.addEventListener("click", ()=> battleAction(btn.dataset.move));
+  });
+}
+
+function battlePush(line){
+  battle.feed.push(line);
+  if(battle.feed.length>4) battle.feed.shift();
+}
+
+function renderBattleUpdate(){
+  if(!battle) return;
+  document.getElementById("modalBody").innerHTML = battleHTML();
+  wireBattleButtons();
+}
+
+function startBattle(enemyPower, enemyLabel, onDone){
+  const enemyMaxHP = Math.round(40 + enemyPower*0.8);
+  battle = {
+    enemyLabel, enemyPower, enemyMaxHP, enemyHP: enemyMaxHP,
+    maxStamina: 60 + Math.round(state.endurance/2),
+    stamina: 0, guarding:false, dodging:false,
+    feed:[], round:0, onDone, ended:false
+  };
+  battle.stamina = battle.maxStamina;
+  setMiniGameActive(true);
+  openModal("Combat !", battleHTML());
+  wireBattleButtons();
+}
+
+function battleAction(move){
+  const b = battle;
+  if(!b || b.ended) return;
+  const chosen = getBattleMoves().find(m=>m.id===move);
+  if(!chosen || chosen.cost>b.stamina) return;
+
+  b.stamina -= chosen.cost;
+  b.guarding = false;
+  b.dodging = false;
+
+  if(move==="flee"){
+    const fleeChance = clamp(0.3 + (state.vitesse - b.enemyPower*0.3)/150, 0.1, 0.75);
+    if(Math.random() < fleeChance){
+      battleFlee();
+      return;
+    }
+    battlePush("Ta tentative de fuite échoue !");
+    renderBattleUpdate();
+    setTimeout(enemyTurn, 700);
+    return;
+  }
+
+  if(move==="guard"){
+    b.guarding = true;
+    b.stamina = Math.min(b.maxStamina, b.stamina+25);
+    battlePush("Tu te mets en garde, prêt·e à encaisser.");
+  } else if(move==="observation"){
+    b.dodging = true;
+    battlePush("Tu anticipes le prochain mouvement adverse grâce à ton Haki de l'Observation.");
+  } else {
+    let dmg, text;
+    if(move==="fruit"){
+      dmg = rand(15,25) + Math.round(fruitPower()*0.5);
+      text = `Tu déchaînes le pouvoir du ${state.devilFruit.name} !`;
+    } else if(move==="armement"){
+      dmg = rand(10,18) + Math.round(state.hakiArm*0.4);
+      text = "Ton poing se durcit d'une force invisible : le Haki de l'Armement frappe fort.";
+    } else {
+      dmg = rand(6,12) + Math.round((state.force+state.vitesse)/6);
+      text = pick(BATTLE_BASIC_LOGS);
+    }
+    b.enemyHP = Math.max(0, b.enemyHP-dmg);
+    battlePush(`${text} (-${dmg} PV)`);
+  }
+
+  renderBattleUpdate();
+
+  if(b.enemyHP<=0){
+    setTimeout(battleVictory, 500);
+    return;
+  }
+  setTimeout(enemyTurn, 700);
+}
+
+function enemyTurn(){
+  const b = battle;
+  if(!b || b.ended) return;
+  b.round++;
+
+  let dmg = rand(Math.round(b.enemyPower*0.35), Math.round(b.enemyPower*0.75));
+  if(b.guarding){
+    dmg = Math.round(dmg*0.5);
+    battlePush(`${b.enemyLabel} riposte, mais ta garde absorbe une partie du choc. (-${dmg} PV)`);
+  } else if(b.dodging){
+    const reduced = Math.round(dmg*0.3);
+    if(Math.random()<0.5){
+      const counter = rand(4,8);
+      b.enemyHP = Math.max(0, b.enemyHP-counter);
+      dmg = reduced;
+      battlePush(`Tu esquives et places une riposte pour ${counter} dégâts ! (-${dmg} PV)`);
+    } else {
+      dmg = reduced;
+      battlePush(`Tu anticipes et limites les dégâts. (-${dmg} PV)`);
     }
   } else {
-    const dmg = rand(15,35);
-    state.health = clamp(state.health-dmg,0,100);
-    addLog(`Défaite face à ${enemyLabel}. Tu t'en sors blessé·e.`, "bad");
-    if(state.crew.length && Math.random()<0.2){
-      const lost = state.crew.pop();
-      addLog(`${lost.name} disparaît dans la bataille...`, "death");
-    }
-    if(state.health<=0){
-      death(state.path==="marine" ? "battle" : (Math.random()<0.5?"battle":"execution"));
-    } else if(state.path!=="marine" && Math.random()<0.08){
-      death("execution");
-    }
+    battlePush(`${b.enemyLabel} riposte violemment. (-${dmg} PV)`);
   }
+
+  state.health = clamp(state.health-dmg, 0, 100);
+  b.guarding = false;
+  b.dodging = false;
+  b.stamina = Math.min(b.maxStamina, b.stamina+12);
+
+  renderBattleUpdate();
+
+  if(state.health<=0){
+    setTimeout(battleDefeat, 500);
+  } else if(b.enemyHP<=0){
+    setTimeout(battleVictory, 500);
+  }
+}
+
+function battleVictory(){
+  const b = battle;
+  b.ended = true;
+  const gain = rand(200,1500) + b.enemyPower*10;
+  if(state.path==="pirate") state.bounty += gain;
+  state.beli += Math.round(gain/2);
+  state.happiness = clamp(state.happiness+5,0,100);
+  let summary = `Tu triomphes de ${b.enemyLabel} ! Ta réputation grandit.`;
+  if(Math.random()<0.3){
+    state.keys += 1;
+    summary += " Tu trouves une clé étrange sur lui.";
+  }
+  addLog(summary, "good");
+  endBattle(b.onDone);
+}
+
+function battleFlee(){
+  const b = battle;
+  b.ended = true;
+  state.happiness = clamp(state.happiness-3,0,100);
+  addLog(`Tu prends la fuite face à ${b.enemyLabel}, le cœur battant.`, "neutral");
+  endBattle(b.onDone);
+}
+
+function battleDefeat(){
+  const b = battle;
+  b.ended = true;
+  addLog(`Défaite face à ${b.enemyLabel}. Tu t'en sors gravement blessé·e.`, "bad");
+  if(state.crew.length && Math.random()<0.2){
+    const lost = state.crew.pop();
+    addLog(`${lost.name} disparaît dans la bataille...`, "death");
+  }
+  if(state.health<=0){
+    death(state.path==="marine" ? "battle" : (Math.random()<0.5?"battle":"execution"));
+  } else if(state.path!=="marine" && Math.random()<0.08){
+    death("execution");
+  }
+  endBattle(b.onDone);
+}
+
+function endBattle(onDone){
+  battle = null;
+  setMiniGameActive(false);
+  checkDeath();
+  save();
+  renderGame(true);
+  closeModal();
+  if(onDone) onDone();
 }
 
 /* ================= MINI-JEUX : ATTAQUES EN MER ================= */
@@ -1507,9 +1710,7 @@ function trainHaki(){
 function seekFight(){
   const danger = currentStage().danger;
   const enemyPower = rand(15,30)*danger;
-  resolveFight(enemyPower, pick(["un pirate rival","un officier de Marine","un chasseur de primes","un monstre marin"]));
-  checkDeath();
-  save(); renderGame(true);
+  startBattle(enemyPower, pick(["un pirate rival","un officier de Marine","un chasseur de primes","un monstre marin"]), ()=>{});
 }
 function seekDevilFruit(){
   if(state.devilFruit){ toast("Tu as déjà mangé un fruit du démon."); return; }
