@@ -660,7 +660,7 @@ function triggerSpecialEvent(ev){
     const isAsync = ev.choices[idx].resolve(finishAgeUp);
     if(!isAsync) finishAgeUp();
   }};
-  const html = ev.choices.map((c,i)=>`
+  const html = `<p class="modal-intro">${ev.text}</p>` + ev.choices.map((c,i)=>`
     <div class="action-row" data-choice="${i}">
       <div><div class="a-label">${c.label}</div>${c.sub ? `<div class="a-sub">${c.sub}</div>` : ''}</div>
       <div class="a-val">→</div>
@@ -2021,7 +2021,7 @@ function openRumorChoice(){
     }
   ];
   pendingChoice = { choices, onResolve:(idx)=> choices[idx].resolve() };
-  const html = choices.map((c,i)=>`
+  const html = `<p class="modal-intro">Dans une taverne du port, des voix murmurent qu'un trésor — peut-être un fruit du démon — serait caché quelque part sur cette île.</p>` + choices.map((c,i)=>`
     <div class="action-row" data-choice="${i}">
       <div><div class="a-label">${c.label}</div>${c.sub?`<div class="a-sub">${c.sub}</div>`:''}</div>
       <div class="a-val">→</div>
@@ -2298,10 +2298,11 @@ function renderGame(scrollLog){
   }
 
   const logEl = document.getElementById("log");
+  const wasNearBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 80;
   logEl.innerHTML = state.log.map(e=>
     `<div class="log-entry ${e.type}">Âge ${e.age} — ${e.text}</div>`
   ).join("");
-  if(scrollLog) logEl.scrollTop = logEl.scrollHeight;
+  if(scrollLog && wasNearBottom) logEl.scrollTop = logEl.scrollHeight;
 
   document.getElementById("btnAge").style.opacity = state.alive ? 1 : 0.3;
   document.getElementById("btnAge").disabled = !state.alive;
