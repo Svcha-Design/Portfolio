@@ -263,6 +263,36 @@ h1,h2,h3{ font-family:'Archivo Black', system-ui, sans-serif; margin:0; }
 .action-row .a-val{ font-size:13px; color:var(--gold); white-space:nowrap; }
 .action-row.disabled{ opacity:.4; pointer-events:none; }
 
+/* ---------- WORLD MAP ---------- */
+.map-route{ position:relative; padding-left:28px; display:flex; flex-direction:column; gap:20px; }
+.map-route::before{
+  content:""; position:absolute; left:10px; top:8px; bottom:8px; width:2px;
+  background:repeating-linear-gradient(to bottom, var(--gold-deep) 0 6px, transparent 6px 13px);
+}
+.map-node{ position:relative; }
+.map-node-marker{
+  position:absolute; left:-28px; top:0; width:24px; height:24px; border-radius:50%;
+  background:var(--sea); border:2px solid var(--gold-deep);
+  display:flex; align-items:center; justify-content:center; font-size:12px; z-index:1;
+}
+.map-node.current .map-node-marker{ background:var(--gold); border-color:var(--gold); box-shadow:0 0 0 4px rgba(242,183,5,.25); }
+.map-node.locked .map-node-title,
+.map-node.locked .map-node-sub{ opacity:.5; }
+.map-node-title{ font-weight:700; font-size:14px; }
+.map-node-sub{ font-size:11px; color:#9fb3c8; margin-top:1px; }
+.map-node-body .map-go{ margin-top:8px; }
+
+.map-islands{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.island-chip{ background:var(--sea); border:1px solid transparent; border-radius:10px; padding:8px 10px; flex:1 1 auto; min-width:130px; }
+.island-chip.here{ border-color:var(--gold); }
+.island-chip-head{ display:flex; align-items:center; gap:6px; font-size:12.5px; cursor:pointer; }
+.island-icon{ font-size:14px; }
+.here-badge{ margin-left:auto; font-size:9px; background:var(--gold); color:var(--ink); padding:1px 6px; border-radius:99px; font-weight:700; }
+.island-detail{ margin-top:8px; display:flex; flex-direction:column; gap:6px; border-top:1px solid #1c3c5c; padding-top:8px; }
+.insight-row{ font-size:11.5px; color:#dbe6f2; line-height:1.4; }
+.insight-row b{ color:var(--gold); }
+.island-detail .map-go{ width:100%; text-align:center; font-size:12.5px; padding:10px 14px; }
+
 .stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .stat-box{ background:var(--sea); border-radius:12px; padding:10px 12px; }
 .stat-box .s-name{ font-size:11px; color:#9fb3c8; }

@@ -87,6 +87,30 @@ const ISLANDS = {
   4: ["Fishman Island","Punk Hazard","Dressrosa","Zou","Whole Cake Island","Wano","Elbaf"]
 };
 
+const ISLAND_ICONS = {
+  "Fuchsia Village":"🐐", "Shells Town":"⚓", "Orange Town":"🍊", "Syrup Village":"🐑",
+  "Baratie":"🍳", "Loguetown":"⚔️", "Cocoyasi":"🍊",
+  "Whiskey Peak":"🌵", "Little Garden":"🦖", "Drum Island":"❄️", "Alabasta":"🏜️",
+  "Skypiea":"☁️", "Water Seven":"🚢", "Enies Lobby":"⚖️", "Thriller Bark":"👻",
+  "Fishman Island":"🐠", "Punk Hazard":"🌋", "Dressrosa":"🎪", "Zou":"🐘",
+  "Whole Cake Island":"🍰", "Wano":"🎏", "Elbaf":"🪓"
+};
+
+const VILLAIN_ARCHETYPES = [
+  "Un seigneur pirate local, redouté de tout l'archipel.",
+  "Un ancien officier de la Marine passé du côté obscur.",
+  "Une chasseuse de primes solitaire à la réputation glaçante.",
+  "Un monstre marin territorial qui garde les eaux environnantes.",
+  "Un maître d'armes invaincu depuis vingt ans.",
+  "Un noble corrompu protégé par une garde privée nombreuse.",
+  "Un commandant de la Marine zélé, prêt à tout pour une promotion.",
+  "Une organisation clandestine qui contrôle les docks.",
+  "Un capitaine pirate à la prime déjà conséquente.",
+  "Un colosse local que personne n'a jamais vaincu en duel."
+];
+
+const MARINE_THREAT_LABELS = ["quasi nulle","faible","modérée","élevée","très élevée","critique","extrême"];
+
 const EPITHETS = [
   "le Tempétueux","aux Mille Cicatrices","le Silencieux","l'Insaisissable",
   "Cœur de Fer","le Vagabond","aux Yeux d'Orage","le Fléau des Mers",
@@ -498,7 +522,7 @@ function freshState(){
     name:"", birthplace:"", familyId:"",
     age:0, year:0, alive:true,
     path:"civil", pathChosen:false,
-    stage:0, island:null,
+    stage:0, maxStage:0, island:null,
     flags:{},
     health:100, happiness:70,
     force:10, vitesse:10, endurance:10, intelligence:10, charisme:10, chance:10,
@@ -1005,31 +1029,110 @@ function retire(){
 
 /* ================= MAP ================= */
 
+let mapInsightCache = {};
+
+function buildIslandInsight(stageId){
+  const danger = STAGES[stageId].danger;
+  const enemyPower = rand(15,30)*danger + rand(0,20);
+  const diff = enemyPower - powerScore();
+  let menaceLevel;
+  if(diff>40) menaceLevel = "Danger extrême — hors de portée pour l'instant";
+  else if(diff>15) menaceLevel = "Danger élevé — combat risqué";
+  else if(diff>-15) menaceLevel = "Adversaire à ta mesure";
+  else menaceLevel = "Danger faible — tu peux prendre le dessus";
+  return {
+    menaceText: pick(VILLAIN_ARCHETYPES),
+    menaceLevel,
+    marineThreat: MARINE_THREAT_LABELS[clamp(danger-1,0,MARINE_THREAT_LABELS.length-1)],
+    devilFruitRumor: Math.random()<0.3
+  };
+}
+
+function travelTo(stageId, islandName){
+  const stage = STAGES[stageId];
+  const wasNewRegion = stageId > state.maxStage;
+  state.stage = stageId;
+  state.maxStage = Math.max(state.maxStage, stageId);
+  state.island = islandName || (ISLANDS[stageId] ? state.island : stage.name);
+  const label = state.island && state.island!==stage.name ? `${state.island}, dans ${stage.name}` : stage.name;
+  addLog(wasNewRegion ? `Tu arrives à ${label}. Un nouveau chapitre commence.` : `Tu navigues vers ${label}.`, wasNewRegion ? "major" : "neutral");
+  closeModal();
+  save();
+  renderGame(true);
+}
+
+function islandChipHTML(name, stage){
+  const isHere = state.stage===stage.id && state.island===name;
+  return `<div class="island-chip ${isHere?'here':''}" data-island="${name}">
+    <div class="island-chip-head">
+      <span class="island-icon">${ISLAND_ICONS[name]||'🏝️'}</span>
+      <span>${name}</span>
+      ${isHere?'<span class="here-badge">ici</span>':''}
+    </div>
+    <div class="island-detail" hidden></div>
+  </div>`;
+}
+
+function stageBlockHTML(s, p){
+  const reached = state.maxStage>=s.id;
+  const isCurrent = state.stage===s.id;
+  const nextAvailable = state.maxStage===s.id-1 && p>=s.req;
+  const locked = !reached && !nextAvailable;
+
+  let statusLine;
+  if(isCurrent) statusLine = "Position actuelle";
+  else if(reached) statusLine = "Région déjà explorée";
+  else if(nextAvailable) statusLine = `Région accessible — puissance requise ${s.req} (toi : ${p})`;
+  else statusLine = `Verrouillé — puissance requise : ${s.req}`;
+
+  const islandPool = ISLANDS[s.id];
+  const showIslands = (reached || nextAvailable) && islandPool;
+  const islandsHTML = showIslands ? `<div class="map-islands">${islandPool.map(name=>islandChipHTML(name,s)).join("")}</div>` : "";
+  const singleWaypoint = (!islandPool && nextAvailable) ? `<button class="btn btn-chip map-go" data-goto-stage="${s.id}" data-goto-island="">Naviguer ici</button>` : "";
+
+  return `<div class="map-node ${locked?'locked':''} ${isCurrent?'current':''}" data-stage-id="${s.id}">
+    <div class="map-node-marker">${isCurrent?'⛵':(reached?'📍':(nextAvailable?'🧭':'🔒'))}</div>
+    <div class="map-node-body">
+      <div class="map-node-title">${s.name}</div>
+      <div class="map-node-sub">${statusLine}</div>
+      ${islandsHTML}
+      ${singleWaypoint}
+    </div>
+  </div>`;
+}
+
 function openMap(){
+  mapInsightCache = {};
   const p = powerScore();
-  const html = STAGES.map(s=>{
-    const reached = state.stage>=s.id;
-    const canGo = state.stage===s.id-1 && p>=s.req;
-    let status = reached ? "Position actuelle" : (canGo ? `Puissance requise : ${s.req} (toi : ${p})` : `Verrouillé — puissance requise : ${s.req}`);
-    return `<div class="action-row ${canGo?'':'disabled'} ${reached?'':''}" data-stage="${s.id}">
-      <div><div class="a-label">${s.name}</div><div class="a-sub">${status}</div></div>
-      <div class="a-val">${reached?'📍':(canGo?'⛵':'🔒')}</div>
-    </div>`;
-  }).join("");
+  const html = `<div class="map-route">${STAGES.map(s=>stageBlockHTML(s,p)).join("")}</div>`;
   openModal("Carte du monde", html);
-  document.querySelectorAll("[data-stage]").forEach(el=>{
-    el.addEventListener("click", ()=>{
-      const id = +el.dataset.stage;
-      if(id===state.stage+1 && p>=STAGES[id].req){
-        state.stage = id;
-        const pool = ISLANDS[id];
-        state.island = pool ? pick(pool) : STAGES[id].name;
-        const label = pool ? `${state.island}, dans ${STAGES[id].name}` : STAGES[id].name;
-        addLog(`Tu arrives à ${label}. Un nouveau chapitre commence.`, "major");
-        closeModal();
-        save(); renderGame(true);
-      }
+
+  document.querySelectorAll(".island-chip").forEach(chip=>{
+    const head = chip.querySelector(".island-chip-head");
+    const detail = chip.querySelector(".island-detail");
+    const name = chip.dataset.island;
+    head.addEventListener("click", ()=>{
+      if(!detail.hidden){ detail.hidden = true; return; }
+      const stageId = +chip.closest(".map-node").dataset.stageId;
+      if(!mapInsightCache[name]) mapInsightCache[name] = buildIslandInsight(stageId);
+      const insight = mapInsightCache[name];
+      const stage = STAGES[stageId];
+      const canTravel = state.maxStage>=stageId || (state.maxStage===stageId-1 && p>=stage.req);
+      const already = state.stage===stageId && state.island===name;
+      detail.hidden = false;
+      detail.innerHTML = `
+        <div class="insight-row">⚔️ <b>${insight.menaceLevel}</b><br>${insight.menaceText}</div>
+        <div class="insight-row">🎖️ Présence de la Marine : <b>${insight.marineThreat}</b></div>
+        ${insight.devilFruitRumor ? `<div class="insight-row">🍈 Rumeur d'un fruit du démon caché sur l'île.</div>` : ""}
+        ${canTravel && !already ? `<button class="btn btn-primary map-go" data-goto-stage="${stageId}" data-goto-island="${name}">Naviguer vers ${name}</button>` : ""}
+      `;
+      const goBtn = detail.querySelector(".map-go");
+      if(goBtn) goBtn.addEventListener("click", ()=> travelTo(+goBtn.dataset.gotoStage, goBtn.dataset.gotoIsland));
     });
+  });
+
+  document.querySelectorAll(".map-node > .map-node-body > .map-go").forEach(btn=>{
+    btn.addEventListener("click", ()=> travelTo(+btn.dataset.gotoStage, btn.dataset.gotoIsland));
   });
 }
 
@@ -1193,6 +1296,8 @@ function wire(){
 
   const existing = loadSave();
   if(existing && existing.alive){
+    if(existing.maxStage===undefined) existing.maxStage = existing.stage;
+    if(!existing.flags) existing.flags = {};
     document.getElementById("btnContinue").hidden = false;
     document.getElementById("btnContinue").addEventListener("click", ()=>{
       state = existing;
