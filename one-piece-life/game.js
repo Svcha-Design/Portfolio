@@ -169,6 +169,109 @@ const DEATH_CAUSES = {
 
 const SPECIAL_EVENTS = [
   {
+    id:"wano_quest_1",
+    title:"Un pays sous le joug",
+    condition:()=> state.stage>=4 && state.island==="Wano" && state.age>=16 && (state.flags.wanoQuestStage||0)===0,
+    text:"Wano vit sous la coupe d'un shogun tyrannique allié aux pirates de Kaido. Dans l'ombre des izakayas, on murmure qu'une résistance clandestine prépare sa revanche.",
+    choices:[
+      { label:"Chercher à rejoindre la résistance", sub:"Le premier pas vers une longue lutte",
+        resolve(){
+          state.flags.wanoQuestStage = 1;
+          state.flags.wanoQuestBonus = 0;
+          applyMods({charisme:2});
+          addLog("Tu prends discrètement contact avec des rebelles. Ta place dans leurs rangs reste à prouver.", "good");
+        }
+      },
+      { label:"Rester en retrait, ce n'est pas ton problème", sub:"",
+        resolve(){
+          addLog("Tu préfères ne pas te mêler des affaires de Wano et poursuis ta route.", "neutral");
+        }
+      }
+    ]
+  },
+  {
+    id:"wano_quest_2",
+    title:"Une caravane à intercepter",
+    condition:()=> state.stage>=4 && state.island==="Wano" && (state.flags.wanoQuestStage||0)===1,
+    text:"La résistance te met à l'épreuve : une caravane de ravitaillement destinée aux forces de Kaido traverse la région à découvert.",
+    choices:[
+      { label:"Saboter la caravane", sub:"Risqué, mais ça prouverait ta valeur",
+        resolve(){
+          state.flags.wanoQuestStage = 2;
+          const enemyPower = rand(30,55);
+          if(Math.random() < clamp(0.5+(powerScore()-enemyPower)/180,0.2,0.9)){
+            state.flags.wanoQuestBonus = (state.flags.wanoQuestBonus||0) + 1;
+            state.beli += rand(500,1500);
+            addLog("La caravane est neutralisée sans perte. La résistance commence à te faire confiance.", "good");
+          } else {
+            state.health = clamp(state.health-rand(10,20),0,100);
+            addLog("L'embuscade tourne court et tu t'en sors blessé·e, sans grand résultat.", "bad");
+          }
+        }
+      },
+      { label:"Décliner, trop risqué", sub:"",
+        resolve(){
+          state.flags.wanoQuestStage = 2;
+          state.happiness = clamp(state.happiness-3,0,100);
+          addLog("Tu laisses passer l'occasion. La résistance semble déçue, mais continue de t'informer.", "neutral");
+        }
+      }
+    ]
+  },
+  {
+    id:"wano_quest_3",
+    title:"Les clans samouraïs",
+    condition:()=> state.stage>=4 && state.island==="Wano" && (state.flags.wanoQuestStage||0)===2,
+    text:"Un noble déchu propose de te présenter aux chefs de clans samouraïs encore fidèles à l'ancien régime, en échange d'un service discret.",
+    choices:[
+      { label:"Rendre le service demandé", sub:"Coûte du Beli, mais ouvre des portes",
+        resolve(){
+          state.flags.wanoQuestStage = 3;
+          const cost = rand(800,2000);
+          if(state.beli >= cost){
+            state.beli -= cost;
+            state.flags.wanoQuestBonus = (state.flags.wanoQuestBonus||0) + 1;
+            addLog("Le service rendu t'ouvre les portes des clans samouraïs. De nouveaux alliés rejoignent la cause.", "good");
+          } else {
+            addLog("Tu n'as pas les moyens de rendre ce service. L'opportunité t'échappe.", "neutral");
+          }
+        }
+      },
+      { label:"Refuser, la proposition sent le piège", sub:"",
+        resolve(){
+          state.flags.wanoQuestStage = 3;
+          applyMods({intelligence:2});
+          addLog("Ta méfiance t'épargne peut-être un piège, mais les clans restent hors de portée pour l'instant.", "neutral");
+        }
+      }
+    ]
+  },
+  {
+    id:"wano_quest_4",
+    title:"Le dernier commandant",
+    condition:()=> state.stage>=4 && state.island==="Wano" && (state.flags.wanoQuestStage||0)===3,
+    text:"La résistance est presque prête. Il ne manque qu'un ancien commandant retraité, désabusé, pour rallier les derniers hésitants.",
+    choices:[
+      { label:"Le convaincre de reprendre les armes", sub:"Une question de conviction",
+        resolve(){
+          state.flags.wanoQuestStage = 4;
+          if(Math.random() < clamp(0.4+state.charisme/150,0.2,0.85)){
+            state.flags.wanoQuestBonus = (state.flags.wanoQuestBonus||0) + 1;
+            addLog("Tes mots portent : le vieux commandant reprend les armes. La résistance est prête à frapper.", "major");
+          } else {
+            addLog("Le commandant reste inflexible, mais la résistance se prépare tout de même sans lui.", "neutral");
+          }
+        }
+      },
+      { label:"Laisser tomber, tu as fait ta part", sub:"",
+        resolve(){
+          state.flags.wanoQuestStage = 4;
+          addLog("Tu laisses la résistance se débrouiller pour cette dernière étape.", "neutral");
+        }
+      }
+    ]
+  },
+  {
     id:"onigashima",
     title:"La guerre d'Onigashima",
     condition:()=> state.stage===4 && state.island==="Wano" && state.age>=18 &&
@@ -177,13 +280,23 @@ const SPECIAL_EVENTS = [
     choices:[
       { label:"Rejoindre la coalition contre Kaido", sub:"Trois vagues de combat, gloire immense en cas de victoire totale",
         resolve(done){
+          const bonus = state.flags.wanoQuestBonus||0;
+          const questStage = state.flags.wanoQuestStage||0;
+          const basePower = questStage===0 ? 180 : clamp(170 - bonus*12, 110, 180);
+          if(questStage===0){
+            addLog("Tu te jettes dans la bataille seul·e, sans le soutien d'une résistance que tu as ignorée.", "neutral");
+          } else if(bonus>=3){
+            addLog("Les alliés que tu as rassemblés se battent à tes côtés : caravane sabotée, clans samouraïs, et le vieux commandant en renfort.", "good");
+          } else if(bonus>0){
+            addLog(`Une partie de la résistance que tu as aidé à bâtir combat à tes côtés (${bonus} soutien${bonus>1?'s':''}).`, "neutral");
+          }
           startWarSequence({
             enemyLabel: "Un guerrier de l'équipage de Kaido",
-            basePower: 170,
+            basePower,
             onComplete(wins){
               if(state.alive){
                 if(wins>=3){
-                  const gain = rand(15000,40000);
+                  const gain = rand(15000,40000) + bonus*2000;
                   if(state.path==="pirate") state.bounty += gain;
                   state.beli += Math.round(gain/3);
                   state.happiness = clamp(state.happiness+15,0,100);
@@ -193,7 +306,7 @@ const SPECIAL_EVENTS = [
                   }
                   addLog("Tu domines les trois vagues d'assaut et contribues directement à la chute de Kaido. Ton nom résonnera dans tout Wano.", "good");
                 } else if(wins===2){
-                  const gain = rand(6000,15000);
+                  const gain = rand(6000,15000) + bonus*1000;
                   if(state.path==="pirate") state.bounty += gain;
                   state.beli += Math.round(gain/3);
                   addLog("Tu tiens bon face à l'essentiel de l'assaut, même si la bataille te laisse épuisé·e.", "good");
@@ -2264,6 +2377,14 @@ function openStatus(){
     ${state.flags.hasRoadPoneglyph ? `
     <div class="action-row" style="cursor:default;">
       <div><div class="a-label">Poneglyphe Route</div><div class="a-sub">Complet — la voie vers Laugh Tale t'est ouverte</div></div>
+    </div>` : ""}
+    ${(state.flags.wanoQuestStage||0)>0 && (state.flags.wanoQuestStage||0)<4 ? `
+    <div class="action-row" style="cursor:default;">
+      <div><div class="a-label">Résistance de Wano</div><div class="a-sub">Étape ${state.flags.wanoQuestStage}/4 · ${state.flags.wanoQuestBonus||0} soutien(s) acquis</div></div>
+    </div>` : ""}
+    ${(state.flags.wanoQuestStage||0)>=4 ? `
+    <div class="action-row" style="cursor:default;">
+      <div><div class="a-label">Résistance de Wano</div><div class="a-sub">Prête à frapper · ${state.flags.wanoQuestBonus||0} soutien(s) pour la bataille finale</div></div>
     </div>` : ""}
     <div class="action-row" style="cursor:default;">
       <div><div class="a-label">Puissance totale</div><div class="a-sub">Score de combat estimé</div></div>
