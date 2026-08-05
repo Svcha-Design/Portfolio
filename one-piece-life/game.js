@@ -66,6 +66,16 @@ const CREW_ROLES = [
   { role:"Sabreur·se", statKey:"force" }, { role:"Timonier", statKey:"vitesse" }
 ];
 
+const STAT_LABELS = { force:"Force", vitesse:"Vitesse", endurance:"Endurance", intelligence:"Intelligence", charisme:"Charisme" };
+
+const SHIP_TIERS = [
+  { name:"Radeau de fortune", cost:0, capacity:2, firepower:5 },
+  { name:"Petit voilier", cost:3000, capacity:4, firepower:15 },
+  { name:"Caravelle", cost:12000, capacity:6, firepower:35 },
+  { name:"Galion de guerre", cost:35000, capacity:8, firepower:60 },
+  { name:"Vaisseau amiral", cost:90000, capacity:10, firepower:100 }
+];
+
 const MARINE_RANKS = [
   "Recrue","Matelot","Enseigne","Lieutenant","Capitaine de corvette",
   "Commandant","Capitaine de vaisseau","Commodore","Contre-amiral",
@@ -165,25 +175,40 @@ const SPECIAL_EVENTS = [
       (state.hakiObs>0 || state.hakiArm>0) && ["pirate","marine","revolutionnaire"].includes(state.path),
     text:"Un déferlement de flammes et de cris embrase le ciel de Wano : la bataille d'Onigashima vient d'éclater entre les forces de Kaido et une coalition de rebelles. Voulez-vous la rejoindre ?",
     choices:[
-      { label:"Rejoindre la coalition contre Kaido", sub:"Risque très élevé, gloire immense en cas de victoire",
-        resolve(){
-          const enemyPower = rand(180,260);
-          const winProb = clamp(0.35 + (powerScore()-enemyPower)/220, 0.05, 0.85);
-          if(Math.random()<winProb){
-            const gain = rand(15000,40000);
-            if(state.path==="pirate") state.bounty += gain;
-            state.beli += Math.round(gain/3);
-            state.happiness = clamp(state.happiness+15,0,100);
-            if(!state.hakiConq && Math.random()<0.25){
-              state.hakiConq = true;
-              addLog("Une pression titanesque explose en toi en pleine bataille : le Haki des Rois s'éveille !", "major");
+      { label:"Rejoindre la coalition contre Kaido", sub:"Trois vagues de combat, gloire immense en cas de victoire totale",
+        resolve(done){
+          startWarSequence({
+            enemyLabel: "Un guerrier de l'équipage de Kaido",
+            basePower: 170,
+            onComplete(wins){
+              if(state.alive){
+                if(wins>=3){
+                  const gain = rand(15000,40000);
+                  if(state.path==="pirate") state.bounty += gain;
+                  state.beli += Math.round(gain/3);
+                  state.happiness = clamp(state.happiness+15,0,100);
+                  if(!state.hakiConq && Math.random()<0.35){
+                    state.hakiConq = true;
+                    addLog("Une pression titanesque explose en toi en pleine bataille : le Haki des Rois s'éveille !", "major");
+                  }
+                  addLog("Tu domines les trois vagues d'assaut et contribues directement à la chute de Kaido. Ton nom résonnera dans tout Wano.", "good");
+                } else if(wins===2){
+                  const gain = rand(6000,15000);
+                  if(state.path==="pirate") state.bounty += gain;
+                  state.beli += Math.round(gain/3);
+                  addLog("Tu tiens bon face à l'essentiel de l'assaut, même si la bataille te laisse épuisé·e.", "good");
+                } else if(wins===1){
+                  state.happiness = clamp(state.happiness-6,0,100);
+                  addLog("Tu ne remportes qu'une victoire avant de devoir te replier, la bataille bien trop intense.", "neutral");
+                } else {
+                  state.happiness = clamp(state.happiness-10,0,100);
+                  addLog("Débordé·e dès les premiers instants, tu bats en retraite sans gloire.", "bad");
+                }
+              }
+              done();
             }
-            addLog("Tu combats aux côtés des rebelles et contribues à la chute de Kaido. Ton nom résonnera dans tout Wano.", "good");
-          } else {
-            state.health = clamp(state.health - rand(35,60), 0, 100);
-            addLog("La bataille est d'une violence inouïe. Tu t'en sors à peine vivant·e.", "bad");
-            if(state.health<=0 || Math.random()<0.12) death("battle");
-          }
+          });
+          return true;
         }
       },
       { label:"Observer à distance, hors de danger", sub:"Prudent, mais tu rates ta chance de gloire",
@@ -201,24 +226,38 @@ const SPECIAL_EVENTS = [
       ((state.path==="pirate" && state.bounty>50000) || (state.path==="marine" && state.marineRank>=2)),
     text:"La nouvelle tombe comme un couperet : une guerre au sommet éclate à Marineford entre la Marine et les forces d'un Empereur.",
     choices:[
-      { label:"Te jeter dans la bataille", sub:"Un affrontement historique",
-        resolve(){
-          const enemyPower = rand(150,220);
-          const winProb = clamp(0.4 + (powerScore()-enemyPower)/200, 0.1, 0.85);
-          if(Math.random()<winProb){
-            if(state.path==="pirate"){
-              state.bounty += rand(10000,30000);
-              addLog("Tu marques les esprits en tenant tête à des vice-amiraux. Ta prime s'envole.", "good");
-            } else {
-              state.marineRank = Math.min(MARINE_RANKS.length-1, state.marineRank+1);
-              addLog(`Ta bravoure au front te vaut une promotion immédiate : ${MARINE_RANKS[state.marineRank]} !`, "major");
+      { label:"Te jeter dans la bataille", sub:"Trois vagues de combat, un affrontement historique",
+        resolve(done){
+          startWarSequence({
+            enemyLabel: state.path==="marine" ? "Un commandant pirate de l'Empereur" : "Un vice-amiral de la Marine",
+            basePower: 150,
+            onComplete(wins){
+              if(state.alive){
+                if(wins>=3){
+                  if(state.path==="pirate"){
+                    state.bounty += rand(20000,35000);
+                    addLog("Tu tiens tête aux plus hauts gradés de la Marine sur les trois vagues. Ta prime s'envole.", "good");
+                  } else {
+                    state.marineRank = Math.min(MARINE_RANKS.length-1, state.marineRank+2);
+                    addLog(`Ta bravoure exceptionnelle te vaut une double promotion : ${MARINE_RANKS[state.marineRank]} !`, "major");
+                  }
+                  state.happiness = clamp(state.happiness+15,0,100);
+                } else if(wins===2){
+                  if(state.path==="pirate") state.bounty += rand(8000,15000);
+                  else state.marineRank = Math.min(MARINE_RANKS.length-1, state.marineRank+1);
+                  addLog("Tu te distingues sur le champ de bataille, même si le prix à payer est lourd.", "good");
+                } else if(wins===1){
+                  state.happiness = clamp(state.happiness-6,0,100);
+                  addLog("Tu ne tiens qu'une vague avant d'être débordé·e et de devoir te replier.", "neutral");
+                } else {
+                  state.happiness = clamp(state.happiness-10,0,100);
+                  addLog("La bataille est trop intense : tu bats en retraite dès les premiers instants.", "bad");
+                }
+              }
+              done();
             }
-            state.happiness = clamp(state.happiness+10,0,100);
-          } else {
-            state.health = clamp(state.health - rand(30,55), 0, 100);
-            addLog("Tu es pris·e dans la tourmente et ressors gravement blessé·e du champ de bataille.", "bad");
-            if(state.health<=0 || Math.random()<0.15) death("battle");
-          }
+          });
+          return true;
         }
       },
       { label:"Te tenir à l'écart du chaos", sub:"La prudence avant tout",
@@ -618,8 +657,8 @@ function triggerSpecialEvent(ev){
   state.flags[ev.id] = true;
   addLog(ev.text, "major");
   pendingChoice = { choices: ev.choices, onResolve:(idx)=>{
-    ev.choices[idx].resolve();
-    finishAgeUp();
+    const isAsync = ev.choices[idx].resolve(finishAgeUp);
+    if(!isAsync) finishAgeUp();
   }};
   const html = ev.choices.map((c,i)=>`
     <div class="action-row" data-choice="${i}">
@@ -660,7 +699,8 @@ function freshState(){
     log:[],
     inPrison:false,
     keys:0, islandVault:null,
-    energy:100
+    energy:100,
+    ship:{ tier:0 }
   };
 }
 
@@ -714,7 +754,8 @@ function powerScore(){
   if(state.devilFruit) p += (state.devilFruit.mods.force||0) + (state.devilFruit.mods.vitesse||0) + (state.devilFruit.mods.endurance||0);
   if(state.hakiConq) p += 20;
   const crewPower = state.crew.reduce((s,c)=>s+c.power,0) * 0.3;
-  return Math.round(p + crewPower);
+  const shipPower = (SHIP_TIERS[state.ship.tier].firepower||0) * 0.3;
+  return Math.round(p + crewPower + shipPower);
 }
 
 function currentStage(){ return STAGES[state.stage]; }
@@ -1102,8 +1143,20 @@ function triggerHazard(danger, onDone){
     addLog("Une bagarre éclate et tu encaisses quelques coups.", "bad");
     onDone();
   } else if(roll < 0.40 && state.path!=="civil"){
+    if(state.path==="pirate" && state.crew.length>0 && Math.random()<0.5){
+      triggerNavalBattle(danger, onDone);
+      return;
+    }
     const enemyPower = rand(10,25) * danger;
-    startBattle(enemyPower, "un adversaire redoutable croisé en chemin", onDone);
+    const marineTargetsMe = ["pirate","revolutionnaire"].includes(state.path);
+    const pirateTargetsMe = ["marine","chasseur"].includes(state.path);
+    let enemyLabel = "un adversaire redoutable croisé en chemin";
+    if(marineTargetsMe && Math.random()<0.65){
+      enemyLabel = pick(["une patrouille de la Marine qui te repère", "un officier zélé bien décidé à t'arrêter", "un vice-amiral de passage, à l'affût"]);
+    } else if(pirateTargetsMe && Math.random()<0.65){
+      enemyLabel = pick(["un équipage pirate hostile", "des pirates en maraude", "un capitaine pirate cherchant les ennuis"]);
+    }
+    startBattle(enemyPower, enemyLabel, onDone);
   } else if(roll < 0.60){
     if(state.devilFruit && Math.random()<0.4){
       state.health = clamp(state.health - rand(10,20), 0, 100);
@@ -1275,7 +1328,7 @@ function enemyTurn(){
   if(!b || b.ended) return;
   b.round++;
 
-  let dmg = rand(Math.round(b.enemyPower*0.35), Math.round(b.enemyPower*0.75));
+  let dmg = rand(Math.round(b.enemyPower*0.18), Math.round(b.enemyPower*0.38));
   if(b.guarding){
     dmg = Math.round(dmg*0.5);
     battlePush(`${b.enemyLabel} riposte, mais ta garde absorbe une partie du choc. (-${dmg} PV)`);
@@ -1321,7 +1374,7 @@ function battleVictory(){
     summary += " Tu trouves une clé étrange sur lui.";
   }
   addLog(summary, "good");
-  endBattle(b.onDone);
+  endBattle(b.onDone, "victory");
 }
 
 function battleFlee(){
@@ -1329,7 +1382,7 @@ function battleFlee(){
   b.ended = true;
   state.happiness = clamp(state.happiness-3,0,100);
   addLog(`Tu prends la fuite face à ${b.enemyLabel}, le cœur battant.`, "neutral");
-  endBattle(b.onDone);
+  endBattle(b.onDone, "flee");
 }
 
 function battleDefeat(){
@@ -1345,17 +1398,67 @@ function battleDefeat(){
   } else if(state.path!=="marine" && Math.random()<0.08){
     death("execution");
   }
-  endBattle(b.onDone);
+  endBattle(b.onDone, "defeat");
 }
 
-function endBattle(onDone){
+function endBattle(onDone, outcome){
   battle = null;
   setMiniGameActive(false);
   checkDeath();
   save();
   renderGame(true);
   closeModal();
-  if(onDone) onDone();
+  if(onDone) onDone(outcome);
+}
+
+function startWarSequence(config){
+  const totalRounds = config.rounds || 3;
+  let wins = 0;
+  let roundIndex = 0;
+
+  function nextRound(){
+    roundIndex++;
+    if(roundIndex > totalRounds){
+      config.onComplete(wins, totalRounds);
+      return;
+    }
+    const scale = totalRounds>1 ? 0.7 + (roundIndex-1) * (0.45/(totalRounds-1)) : 1;
+    const enemyPower = Math.round(config.basePower * scale);
+    const label = `${config.enemyLabel} — Vague ${roundIndex}/${totalRounds}`;
+    startBattle(enemyPower, label, (outcome)=>{
+      if(outcome==="victory") wins++;
+      if(!state.alive || outcome==="flee"){
+        config.onComplete(wins, roundIndex);
+        return;
+      }
+      nextRound();
+    });
+  }
+  nextRound();
+}
+
+function triggerNavalBattle(danger, onDone){
+  const enemyPower = rand(20,40) * danger;
+  const hadDevilFruit = !state.devilFruit && Math.random() < 0.25;
+  const enemyLabel = pick(["un navire pirate rival", "une flotte pirate hostile", "un équipage de chasseurs de trésors armés jusqu'aux dents"]);
+  addLog(`${enemyLabel[0].toUpperCase()}${enemyLabel.slice(1)} ouvre le feu sur ton navire !`, "bad");
+  startBattle(enemyPower, enemyLabel, (outcome)=>{
+    if(outcome==="victory"){
+      const bonus = rand(1000,4000) * danger;
+      state.beli += bonus;
+      addLog(`Le navire ennemi est vaincu : tu pilles ${fmt(bonus)} Beli dans ses cales.`, "good");
+      if(hadDevilFruit){
+        const fruit = pick(DEVIL_FRUITS);
+        state.devilFruit = fruit;
+        applyMods(fruit.mods);
+        addLog(`Parmi le butin, un fruit du démon ! Tu manges le ${fruit.name} (${fruit.type}). ${fruit.desc}`, "major");
+      }
+    } else if(outcome==="defeat" && state.crew.length && Math.random()<0.4){
+      const lost = state.crew.pop();
+      addLog(`Dans la confusion de l'abordage, ${lost.name} est porté·e disparu·e.`, "death");
+    }
+    onDone(outcome);
+  });
 }
 
 /* ================= MINI-JEUX : ATTAQUES EN MER ================= */
@@ -1674,7 +1777,7 @@ function openActionsMenu(){
   }
   if(state.path==="pirate"){
     rows.push({ label:"Chercher un fruit du démon", sub: state.devilFruit? "Déjà obtenu" : "Chance rare de trouver un pouvoir", fn:seekDevilFruit, disabled: !!state.devilFruit, cost:20 });
-    rows.push({ label:"Recruter un·e compagnon·gne", sub:`Équipage : ${state.crew.length}`, fn:recruitCrew, cost:15 });
+    rows.push({ label:"Recruter un·e compagnon·gne", sub:`Équipage ${state.crew.length}/${SHIP_TIERS[state.ship.tier].capacity} · coûte du Beli`, fn:scoutRecruits, cost:15, disabled: state.crew.length>=SHIP_TIERS[state.ship.tier].capacity });
   }
   if(state.islandVault && state.islandVault.island===state.island && state.islandVault.rumorHeard && !state.islandVault.resolved){
     const remaining = state.islandVault.chests.filter(c=>!c.opened).length;
@@ -1775,14 +1878,55 @@ function seekDevilFruit(){
   }
   save(); renderGame(true);
 }
-function recruitCrew(){
-  if(state.crew.length>=9){ toast("Ton équipage est complet !"); return; }
-  const roleData = pick(CREW_ROLES);
-  const power = rand(10,30) + Math.round(state.charisme/2);
-  const member = { name: pick(CREW_FIRST), role: roleData.role, power, loyalty: rand(50,90) };
-  state.crew.push(member);
-  addLog(`${member.name} rejoint ton équipage en tant que ${member.role.toLowerCase()} !`, "good");
-  save(); renderGame(true);
+function scoutRecruits(){
+  const capacity = SHIP_TIERS[state.ship.tier].capacity;
+  if(state.crew.length>=capacity){ toast("Ton équipage est complet pour ce navire !"); return; }
+  const cost = rand(400,900) * currentStage().danger;
+  if(state.beli < cost){ toast(`Il te faut au moins ${fmt(cost)} Beli pour recruter.`); return; }
+  state.beli -= cost;
+
+  const candidates = [];
+  for(let i=0;i<3;i++){
+    const roleData = pick(CREW_ROLES);
+    const power = rand(10,30) + Math.round(state.charisme/2);
+    const bonusAmount = rand(2,5);
+    candidates.push({ name: pick(CREW_FIRST), role: roleData.role, power, statKey: roleData.statKey, bonusAmount });
+  }
+  addLog(`Tu dépenses ${fmt(cost)} Beli pour repérer des recrues potentielles sur les quais.`, "neutral");
+  save();
+  renderGame(true);
+  openRecruitChoice(candidates);
+}
+
+function openRecruitChoice(candidates){
+  const html = candidates.map((c,i)=>`
+    <div class="action-row" data-recruit="${i}">
+      <div><div class="a-label">${c.name} — ${c.role}</div><div class="a-sub">+${c.bonusAmount} ${STAT_LABELS[c.statKey]} · Puissance ${c.power}</div></div>
+      <div class="a-val">→</div>
+    </div>`).join("") + `
+    <div class="action-row" data-recruit="decline">
+      <div><div class="a-label">Repartir les mains vides</div><div class="a-sub">Aucune de ces recrues ne te convainc</div></div>
+      <div class="a-val">→</div>
+    </div>`;
+  openModal("Recrues disponibles", html);
+  document.querySelectorAll("[data-recruit]").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      const key = el.dataset.recruit;
+      closeModal();
+      if(key==="decline"){
+        addLog("Aucune de ces recrues ne te convainc ; tu repars les mains vides.", "neutral");
+        save();
+        renderGame(true);
+        return;
+      }
+      const c = candidates[+key];
+      state.crew.push({ name:c.name, role:c.role, power:c.power, loyalty: rand(50,90) });
+      applyMods({ [c.statKey]: c.bonusAmount });
+      addLog(`${c.name} rejoint ton équipage en tant que ${c.role.toLowerCase()} ! Ses conseils t'apportent +${c.bonusAmount} ${STAT_LABELS[c.statKey]}.`, "good");
+      save();
+      renderGame(true);
+    });
+  });
 }
 function retire(){
   state.alive = false;
@@ -2038,17 +2182,50 @@ function openMap(){
 
 /* ================= CREW VIEW ================= */
 
-function openCrewView(){
-  if(state.path!=="pirate" || state.crew.length===0){
-    openModal("Équipage", `<p style="color:#9fb3c8;font-size:13px;">Tu n'as pas encore de compagnons de route. Utilise le menu Actions pour recruter.</p>`);
-    return;
+function openShipView(){
+  const tier = SHIP_TIERS[state.ship.tier];
+  const nextTier = SHIP_TIERS[state.ship.tier+1];
+
+  let html = `
+    <div class="action-row" style="cursor:default;">
+      <div><div class="a-label">${tier.name}</div><div class="a-sub">Capacité ${state.crew.length}/${tier.capacity} · Puissance de feu ${tier.firepower}</div></div>
+    </div>`;
+
+  if(nextTier){
+    const affordable = state.beli >= nextTier.cost;
+    html += `<div class="action-row ${affordable?'':'disabled'}" id="btnUpgradeShip">
+      <div><div class="a-label">Améliorer : ${nextTier.name}</div><div class="a-sub">Capacité ${nextTier.capacity} · Puissance de feu ${nextTier.firepower} · ${fmt(nextTier.cost)} Beli</div></div>
+      <div class="a-val">${affordable?'⬆️':'🔒'}</div>
+    </div>`;
+  } else {
+    html += `<div class="action-row" style="cursor:default;"><div><div class="a-label">Navire au niveau maximum</div></div></div>`;
   }
-  const html = state.crew.map(c=>`
-    <div class="crew-card">
-      <div><b>${c.name}</b><span>${c.role}</span></div>
-      <div class="a-val">💪 ${c.power}</div>
-    </div>`).join("");
-  openModal(`Équipage (${state.crew.length}/9)`, html);
+
+  if(state.path==="pirate" && state.crew.length>0){
+    html += state.crew.map(c=>`
+      <div class="crew-card">
+        <div><b>${c.name}</b><span>${c.role}</span></div>
+        <div class="a-val">💪 ${c.power}</div>
+      </div>`).join("");
+  } else if(state.path==="pirate"){
+    html += `<p style="color:#9fb3c8;font-size:13px;margin-top:10px;">Aucun compagnon de route pour l'instant. Recrute-en depuis le menu Actions.</p>`;
+  } else {
+    html += `<p style="color:#9fb3c8;font-size:13px;margin-top:10px;">Le navire et l'équipage sont réservés à la vie de pirate.</p>`;
+  }
+
+  openModal("Navire", html);
+  const upgradeBtn = document.getElementById("btnUpgradeShip");
+  if(upgradeBtn){
+    upgradeBtn.addEventListener("click", ()=>{
+      if(!nextTier || state.beli < nextTier.cost) return;
+      state.beli -= nextTier.cost;
+      state.ship.tier++;
+      addLog(`Ton navire devient un(e) ${nextTier.name} ! Plus grand, plus rapide, plus armé.`, "major");
+      closeModal();
+      save();
+      renderGame(true);
+    });
+  }
 }
 
 /* ================= STATUS SHEET ================= */
@@ -2191,7 +2368,7 @@ function wire(){
   document.getElementById("btnAge").addEventListener("click", ageUp);
   document.getElementById("btnActions").addEventListener("click", openActionsMenu);
   document.getElementById("btnMap").addEventListener("click", openMap);
-  document.getElementById("btnCrew").addEventListener("click", openCrewView);
+  document.getElementById("btnCrew").addEventListener("click", openShipView);
   document.getElementById("btnStatus").addEventListener("click", openStatus);
 
   document.getElementById("modalClose").addEventListener("click", ()=>{
@@ -2212,6 +2389,7 @@ function wire(){
     if(existing.keys===undefined) existing.keys = 0;
     if(existing.islandVault===undefined) existing.islandVault = null;
     if(existing.energy===undefined) existing.energy = 100;
+    if(!existing.ship) existing.ship = { tier:0 };
     document.getElementById("btnContinue").hidden = false;
     document.getElementById("btnContinue").addEventListener("click", ()=>{
       state = existing;
