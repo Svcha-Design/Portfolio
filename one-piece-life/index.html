@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>One Piece Life — simulateur de vie</title>
+<meta name="description" content="Un jeu de simulation de vie façon BitLife dans l'univers de One Piece. Naissez, grandissez, devenez pirate, marine ou révolutionnaire et tentez de trouver le One Piece.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ECRAN TITRE -->
+  <section id="screen-start" class="screen active">
+    <div class="title-wrap">
+      <span class="title-flag">☠️</span>
+      <h1 class="title-logo">ONE PIECE<span>LIFE</span></h1>
+      <p class="title-sub">Le simulateur de vie sur Grand Line</p>
+    </div>
+    <div class="title-actions">
+      <button id="btnNewGame" class="btn btn-primary btn-lg">Commencer une nouvelle vie</button>
+      <button id="btnContinue" class="btn btn-secondary btn-lg" hidden>Reprendre ma vie</button>
+      <button id="btnHOF" class="btn btn-ghost btn-lg">📜 Livre des légendes</button>
+    </div>
+    <p class="title-foot">Fan-jeu non officiel, inspiré de l'univers One Piece d'Eiichiro Oda.</p>
+  </section>
+
+  <!-- CREATION DE PERSONNAGE -->
+  <section id="screen-create" class="screen">
+    <div class="create-scroll">
+      <h2 class="section-title">Nouvelle vie</h2>
+
+      <label class="field-label" for="inputName">Ton nom</label>
+      <div class="name-row">
+        <input type="text" id="inputName" maxlength="20" placeholder="Ex: Monkey D. Ruy">
+        <button id="btnRandomName" class="btn btn-chip" type="button">🎲</button>
+      </div>
+
+      <label class="field-label">Lieu de naissance</label>
+      <div id="birthplaceGrid" class="chip-grid"></div>
+
+      <label class="field-label">Origine familiale</label>
+      <div id="familyGrid" class="option-list"></div>
+
+      <button id="btnBirth" class="btn btn-primary btn-lg" style="margin-top:18px;">Naître 👶</button>
+      <button id="btnBackTitle" class="btn btn-ghost">Retour</button>
+    </div>
+  </section>
+
+  <!-- JEU -->
+  <section id="screen-game" class="screen">
+    <header class="game-header">
+      <div class="gh-top">
+        <div class="gh-id">
+          <strong id="hudName">—</strong>
+          <span id="hudTag" class="tag"></span>
+        </div>
+        <div class="gh-age">Âge <span id="hudAge">0</span></div>
+      </div>
+      <div class="gh-bars">
+        <div class="bar-mini" title="Santé">❤️<div class="bar-track"><div id="barHealth" class="bar-fill fill-health"></div></div></div>
+        <div class="bar-mini" title="Bonheur">😊<div class="bar-track"><div id="barHappy" class="bar-fill fill-happy"></div></div></div>
+      </div>
+      <div class="gh-money">
+        <span>💰 <span id="hudBeli">0</span> Beli</span>
+        <span id="hudBountyWrap" hidden>☠️ <span id="hudBounty">0</span> Beli</span>
+      </div>
+    </header>
+
+    <div id="log" class="log"></div>
+
+    <nav class="bottombar">
+      <button class="bb-btn" id="btnMap">🗺️<span>Carte</span></button>
+      <button class="bb-btn" id="btnCrew">⚓<span>Équipage</span></button>
+      <button class="bb-btn bb-primary" id="btnAge">▶<span>Vieillir</span></button>
+      <button class="bb-btn" id="btnActions">⚔️<span>Actions</span></button>
+      <button class="bb-btn" id="btnStatus">📋<span>Fiche</span></button>
+    </nav>
+  </section>
+
+  <!-- ECRAN FIN DE VIE -->
+  <section id="screen-end" class="screen">
+    <div class="end-wrap">
+      <span class="end-flag">🪦</span>
+      <h2 id="endTitle" class="section-title">Fin de la légende</h2>
+      <p id="endCause" class="end-cause"></p>
+      <div id="endStats" class="end-stats"></div>
+      <button id="btnEndNew" class="btn btn-primary btn-lg">Nouvelle vie</button>
+      <button id="btnEndHOF" class="btn btn-ghost btn-lg">📜 Livre des légendes</button>
+    </div>
+  </section>
+
+  <!-- LIVRE DES LEGENDES -->
+  <section id="screen-hof" class="screen">
+    <div class="create-scroll">
+      <h2 class="section-title">📜 Livre des légendes</h2>
+      <div id="hofList" class="hof-list"></div>
+      <button id="btnHofBack" class="btn btn-ghost btn-lg">Retour</button>
+    </div>
+  </section>
+
+</div>
+
+<!-- MODAL / PANNEAU D'ACTIONS -->
+<div id="modalOverlay" class="modal-overlay">
+  <div class="modal-sheet">
+    <div class="modal-head">
+      <h3 id="modalTitle">Titre</h3>
+      <button id="modalClose" class="modal-close">✕</button>
+    </div>
+    <div id="modalBody" class="modal-body"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="game.js"></script>
+</body>
+</html>
