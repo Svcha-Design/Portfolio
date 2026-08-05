@@ -584,6 +584,392 @@ const SPECIAL_EVENTS = [
         resolve(){ addLog("Tu laisses cette rumeur aux autres et poursuis ton chemin.", "neutral"); }
       }
     ]
+  },
+
+  /* ---- Whiskey Peak ---- */
+  {
+    id:"whiskeypeak_1",
+    title:"Un accueil trop chaleureux",
+    condition:()=> state.stage>=2 && state.island==="Whiskey Peak" && (state.flags.whiskeypeakStage||0)===0 && state.path==="pirate",
+    text:"Le village de Whiskey Peak t'accueille en héros : festin, musique, hospitalité débordante. Étrangement chaleureux pour un lieu réputé si désert.",
+    choices:[
+      { label:"Profiter de la fête sans te méfier", sub:"",
+        resolve(){ state.flags.whiskeypeakStage=1; applyMods({happiness:8}); addLog("Tu te laisses porter par la fête, insouciant·e.", "neutral"); } },
+      { label:"Rester sur tes gardes, l'accueil sonne faux", sub:"",
+        resolve(){ state.flags.whiskeypeakStage=1; state.flags.whiskeypeakWary=true; applyMods({intelligence:2}); addLog("Quelque chose cloche. Tu restes discrètement en alerte durant la soirée.", "neutral"); } }
+    ]
+  },
+  {
+    id:"whiskeypeak_2",
+    title:"Le piège se referme",
+    condition:()=> state.stage>=2 && state.island==="Whiskey Peak" && (state.flags.whiskeypeakStage||0)===1,
+    text:"En pleine nuit, les villageois révèlent leur vraie nature : des chasseurs de primes de l'organisation Baroque Works, armés jusqu'aux dents, encerclent la place.",
+    choices:[
+      { label:"Te battre pour t'échapper", sub:"Combat",
+        resolve(done){
+          const enemyPower = rand(25,45) - (state.flags.whiskeypeakWary?10:0);
+          startBattle(Math.max(15,enemyPower), "des chasseurs de primes de Baroque Works", (outcome)=>{ done(); });
+          return true;
+        }
+      },
+      { label:"Fuir dans la confusion", sub:"Chance basée sur ta Vitesse",
+        resolve(){
+          if(Math.random() < clamp(0.4 + state.vitesse/150 + (state.flags.whiskeypeakWary?0.15:0), 0.15, 0.9)){
+            addLog("Tu profites de la confusion pour t'éclipser sans encombre.", "good");
+          } else {
+            state.health = clamp(state.health-rand(10,20),0,100);
+            addLog("Rattrapé·e avant d'avoir pu fuir, tu t'en sors avec quelques blessures.", "bad");
+          }
+        }
+      }
+    ]
+  },
+
+  /* ---- Little Garden ---- */
+  {
+    id:"littlegarden_1",
+    title:"Le duel des géants",
+    condition:()=> state.stage>=2 && state.island==="Little Garden" && (state.flags.littlegardenStage||0)===0,
+    text:"Sur cette île oubliée du temps où rôdent des créatures préhistoriques, deux géants s'affrontent dans un duel qui dure depuis des décennies, par respect mutuel.",
+    choices:[
+      { label:"Aller à leur rencontre, impressionné·e", sub:"",
+        resolve(){ state.flags.littlegardenStage=1; state.flags.littlegardenAlly=true; applyMods({charisme:2}); addLog("Les géants apprécient ton audace et t'accueillent sans hostilité.", "good"); } },
+      { label:"Les éviter et explorer discrètement l'île", sub:"",
+        resolve(){ state.flags.littlegardenStage=1; applyMods({chance:2}); addLog("Tu préfères observer de loin ce duel titanesque.", "neutral"); } }
+    ]
+  },
+  {
+    id:"littlegarden_2",
+    title:"Rugissement dans la jungle",
+    condition:()=> state.stage>=2 && state.island==="Little Garden" && (state.flags.littlegardenStage||0)===1,
+    text:"Un dinosaure féroce surgit soudainement, menaçant de mettre fin au duel séculaire des géants et de te dévorer au passage.",
+    choices:[
+      { label:"Affronter la bête", sub:"Combat, les géants peuvent intervenir",
+        resolve(done){
+          const enemyPower = rand(35,60) - (state.flags.littlegardenAlly?12:0);
+          startBattle(Math.max(20,enemyPower), "un dinosaure féroce", (outcome)=>{
+            if(outcome==="victory" && state.flags.littlegardenAlly){
+              addLog("Les géants saluent ta bravoure d'un signe de tête respectueux.", "good");
+            }
+            done();
+          });
+          return true;
+        }
+      },
+      { label:"Fuir vers la côte", sub:"",
+        resolve(){ addLog("Tu détales vers le rivage, laissant la bête à sa jungle.", "neutral"); } }
+    ]
+  },
+
+  /* ---- Drum Island ---- */
+  {
+    id:"drumisland_1",
+    title:"L'épidémie du royaume gelé",
+    condition:()=> state.stage>=2 && state.island==="Drum Island" && (state.flags.drumislandStage||0)===0,
+    text:"Un village de l'île enneigée de Drum souffre d'une épidémie. Les habitants implorent l'aide de quiconque pourrait atteindre les herbes médicinales en haute montagne.",
+    choices:[
+      { label:"Partir chercher les herbes en montagne", sub:"Épreuve d'Endurance dans le froid",
+        resolve(){
+          state.flags.drumislandStage=1;
+          if(Math.random() < clamp(0.4+state.endurance/150,0.2,0.85)){
+            state.flags.drumislandCure=true;
+            addLog("Après une ascension glaciale, tu redescends avec les herbes rares.", "good");
+          } else {
+            state.health = clamp(state.health-rand(10,20),0,100);
+            addLog("La montagne est impitoyable : tu rentres bredouille et épuisé·e.", "bad");
+          }
+        }
+      },
+      { label:"Continuer ta route, ce n'est pas ton problème", sub:"",
+        resolve(){ state.flags.drumislandStage=1; applyMods({happiness:-3}); addLog("Tu tournes le dos au village, non sans un pincement de culpabilité.", "neutral"); } }
+    ]
+  },
+  {
+    id:"drumisland_2",
+    title:"Le sort du village",
+    condition:()=> state.stage>=2 && state.island==="Drum Island" && (state.flags.drumislandStage||0)===1,
+    text:"De retour au village, le moment est venu de voir ce que tes efforts — ou ton absence — auront changé.",
+    choices:[
+      { label:"Aider les villageois du mieux que tu peux", sub:"",
+        resolve(){
+          if(state.flags.drumislandCure){
+            state.beli += rand(2000,5000);
+            applyMods({charisme:3, happiness:10});
+            addLog("Le remède sauve le village. Ta légende commence à se répandre sur l'île.", "good");
+          } else {
+            applyMods({happiness:4});
+            addLog("Sans remède, tu ne peux qu'apporter un peu de réconfort aux habitants.", "neutral");
+          }
+        }
+      },
+      { label:"Repartir sans t'attarder", sub:"",
+        resolve(){ applyMods({happiness:-4}); addLog("Tu quittes Drum Island sans un regard en arrière.", "neutral"); } }
+    ]
+  },
+
+  /* ---- Water Seven ---- */
+  {
+    id:"waterseven_1",
+    title:"Plans volés",
+    condition:()=> state.stage>=2 && state.island==="Water Seven" && (state.flags.watersevenStage||0)===0 && state.path==="pirate",
+    text:"Le grand chantier naval de Water Seven grouille d'activité. Le maître charpentier cherche des bras solides pour récupérer des plans volés par des rivaux.",
+    choices:[
+      { label:"Aider à récupérer les plans", sub:"Épreuve de Force et de Vitesse",
+        resolve(){
+          state.flags.watersevenStage=1;
+          if(Math.random() < clamp(0.35+(state.force+state.vitesse)/220,0.2,0.85)){
+            state.flags.watersevenFavor=true;
+            addLog("Les plans sont récupérés sans accroc. Le charpentier n'oubliera pas ce service.", "good");
+          } else {
+            state.health = clamp(state.health-rand(8,16),0,100);
+            addLog("La récupération tourne mal, mais tu t'en sors avec seulement quelques bleus.", "bad");
+          }
+        }
+      },
+      { label:"Décliner, tu as tes propres affaires", sub:"",
+        resolve(){ state.flags.watersevenStage=1; addLog("Tu laisses le chantier naval régler ses affaires seul.", "neutral"); } }
+    ]
+  },
+  {
+    id:"waterseven_2",
+    title:"La faveur du chantier naval",
+    condition:()=> state.stage>=2 && state.island==="Water Seven" && (state.flags.watersevenStage||0)===1,
+    text:"Le chantier naval de Water Seven est prêt à te faire une offre, à la hauteur du service que tu lui as rendu — ou non.",
+    choices:[
+      { label:"Négocier une refonte de ton navire", sub:"",
+        resolve(){
+          if(state.flags.watersevenFavor && state.ship.tier < SHIP_TIERS.length-1){
+            state.ship.tier++;
+            addLog(`Reconnaissants, les charpentiers t'offrent une refonte complète : ton navire devient un(e) ${SHIP_TIERS[state.ship.tier].name} !`, "major");
+          } else if(state.flags.watersevenFavor){
+            const gain = rand(3000,8000);
+            state.beli += gain;
+            addLog(`Ton navire est déjà au sommet de leur art ; ils t'offrent plutôt ${fmt(gain)} Beli de matériel.`, "good");
+          } else {
+            const gain = rand(300,900);
+            state.beli += gain;
+            addLog(`Sans service rendu, tu n'obtiens qu'une remise modeste : ${fmt(gain)} Beli de matériel.`, "neutral");
+          }
+        }
+      },
+      { label:"Repartir sans rien demander", sub:"",
+        resolve(){ addLog("Tu quittes Water Seven sans solliciter le chantier naval.", "neutral"); } }
+    ]
+  },
+
+  /* ---- Enies Lobby ---- */
+  {
+    id:"enieslobby_1",
+    title:"Un allié capturé",
+    condition:()=> state.stage>=2 && state.island==="Enies Lobby" && (state.flags.enieslobbyStage||0)===0 && ["pirate","revolutionnaire"].includes(state.path),
+    text:"Tu apprends qu'un allié a été capturé par les agents du gouvernement et retenu à Enies Lobby, bastion de la Justice, en attente d'un tribunal expéditif.",
+    choices:[
+      { label:"Préparer un plan d'évasion", sub:"",
+        resolve(){ state.flags.enieslobbyStage=1; state.flags.enieslobbyPrepped=true; applyMods({intelligence:2}); addLog("Tu étudies les rondes des gardes et prépares méticuleusement ton coup.", "neutral"); } },
+      { label:"Laisser faire, trop risqué de défier le Gouvernement", sub:"",
+        resolve(){ state.flags.enieslobbyStage=1; applyMods({happiness:-5}); addLog("Tu renonces à intervenir, non sans remords.", "neutral"); } }
+    ]
+  },
+  {
+    id:"enieslobby_2",
+    title:"L'assaut d'Enies Lobby",
+    condition:()=> state.stage>=2 && state.island==="Enies Lobby" && (state.flags.enieslobbyStage||0)===1,
+    text:"Le moment est venu d'agir, ou de renoncer définitivement au sort de ton allié.",
+    choices:[
+      { label:"Infiltrer Enies Lobby pour le libérer", sub:"Combat contre les agents du CP",
+        resolve(done){
+          const enemyPower = rand(50,85) - (state.flags.enieslobbyPrepped?15:0);
+          startBattle(Math.max(30,enemyPower), "des agents du Cipher Pol", (outcome)=>{
+            if(outcome==="victory"){
+              if(state.path==="pirate" && state.crew.length<SHIP_TIERS[state.ship.tier].capacity){
+                const roleData = pick(CREW_ROLES);
+                const member = { name: pick(CREW_FIRST), role: roleData.role, power: rand(15,30), loyalty: rand(70,95) };
+                state.crew.push(member);
+                addLog(`Libéré·e, ${member.name} rejoint ton équipage par gratitude, en tant que ${member.role.toLowerCase()}.`, "good");
+              } else {
+                state.beli += rand(3000,7000);
+                addLog("Ton allié est libéré et t'offre tout ce qu'il possède en remerciement.", "good");
+              }
+            } else {
+              state.repMarine -= 10;
+              addLog("L'assaut échoue. Ta réputation auprès de la Marine en pâtit sérieusement.", "bad");
+            }
+            done();
+          });
+          return true;
+        }
+      },
+      { label:"Renoncer", sub:"",
+        resolve(){ applyMods({happiness:-8}); addLog("Tu abandonnes ton allié à son sort. Le poids de ce choix te suit longtemps.", "bad"); } }
+    ]
+  },
+
+  /* ---- Thriller Bark ---- */
+  {
+    id:"thrillerbark_1",
+    title:"Le navire-île hanté",
+    condition:()=> state.stage>=2 && state.island==="Thriller Bark" && (state.flags.thrillerbarkStage||0)===0,
+    text:"Un brouillard épais et une atmosphère glaçante enveloppent ce navire-île gigantesque. Des ombres semblent se détacher des passants et s'évanouir dans la nuit.",
+    choices:[
+      { label:"Enquêter sur ce phénomène", sub:"",
+        resolve(){ state.flags.thrillerbarkStage=1; state.flags.thrillerbarkBrave=true; applyMods({chance:2}); addLog("Ta curiosité l'emporte sur ta peur, et tu suis les ombres jusqu'à leur source.", "neutral"); } },
+      { label:"Fuir cette île maudite au plus vite", sub:"",
+        resolve(){ state.flags.thrillerbarkStage=1; applyMods({happiness:4}); addLog("Tu préfères ne rien savoir et quittes les lieux au plus vite.", "neutral"); } }
+    ]
+  },
+  {
+    id:"thrillerbark_2",
+    title:"Le voleur d'ombres",
+    condition:()=> state.stage>=2 && state.island==="Thriller Bark" && (state.flags.thrillerbarkStage||0)===1,
+    text:"Un savant fou manipulateur d'ombres surgit de la brume, prêt à voler la tienne pour grossir son armée de zombies.",
+    choices:[
+      { label:"Combattre pour protéger ton ombre", sub:"Combat",
+        resolve(done){
+          const enemyPower = rand(40,70) - (state.flags.thrillerbarkBrave?10:0);
+          startBattle(Math.max(25,enemyPower), "un savant manipulateur d'ombres", (outcome)=>{
+            if(outcome==="victory" && !state.epithet){
+              state.epithet = pick(EPITHETS);
+              addLog(`Ta victoire sur cette créature de cauchemar te vaut un surnom : "${state.epithet}".`, "major");
+            }
+            done();
+          });
+          return true;
+        }
+      },
+      { label:"Tenter de fuir le navire", sub:"Chance basée sur ta Vitesse",
+        resolve(){
+          if(Math.random() < clamp(0.4+state.vitesse/150,0.2,0.85)){
+            addLog("Tu regagnes ton navire à temps, ombre intacte.", "good");
+          } else {
+            if(state.crew.length && Math.random()<0.15){
+              const lost = state.crew.pop();
+              addLog(`Dans la panique, ${lost.name} disparaît dans la brume, son ombre volée.`, "death");
+            } else {
+              state.health = clamp(state.health-rand(10,18),0,100);
+              addLog("Tu t'échappes de justesse, mais non sans dommages.", "bad");
+            }
+          }
+        }
+      }
+    ]
+  },
+
+  /* ---- Punk Hazard ---- */
+  {
+    id:"punkhazard_1",
+    title:"Le laboratoire clandestin",
+    condition:()=> state.stage>=4 && state.island==="Punk Hazard" && (state.flags.punkhazardStage||0)===0,
+    text:"Sur cette île à moitié gelée, moitié brûlante, tu découvres les vestiges d'un laboratoire clandestin où des enfants semblent retenus prisonniers.",
+    choices:[
+      { label:"Explorer le laboratoire", sub:"",
+        resolve(){ state.flags.punkhazardStage=1; state.flags.punkhazardScout=true; applyMods({intelligence:2}); addLog("Tu repères discrètement les issues et les points faibles de la garde.", "neutral"); } },
+      { label:"T'éloigner, ce lieu est trop dangereux", sub:"",
+        resolve(){ state.flags.punkhazardStage=1; addLog("Tu préfères ne pas t'attarder près de ce lieu inquiétant.", "neutral"); } }
+    ]
+  },
+  {
+    id:"punkhazard_2",
+    title:"La libération des prisonniers",
+    condition:()=> state.stage>=4 && state.island==="Punk Hazard" && (state.flags.punkhazardStage||0)===1,
+    text:"Les gardes du laboratoire te repèrent : c'est le moment d'agir pour libérer les enfants prisonniers, ou de partir sans intervenir.",
+    choices:[
+      { label:"Affronter les gardes et libérer les enfants", sub:"Combat",
+        resolve(done){
+          const enemyPower = rand(60,100) - (state.flags.punkhazardScout?15:0);
+          startBattle(Math.max(35,enemyPower), "les gardes du laboratoire", (outcome)=>{
+            if(outcome==="victory"){
+              applyMods({happiness:15, charisme:3});
+              state.beli += rand(2000,5000);
+              if(!state.epithet){ state.epithet = pick(EPITHETS); addLog(`Ce sauvetage éclatant te vaut un surnom : "${state.epithet}".`, "major"); }
+              addLog("Les enfants sont libérés. Leur gratitude te réchauffe le cœur.", "good");
+            }
+            done();
+          });
+          return true;
+        }
+      },
+      { label:"Partir sans intervenir", sub:"",
+        resolve(){ applyMods({happiness:-10}); addLog("Tu quittes Punk Hazard sans intervenir, hanté·e par ce que tu as vu.", "bad"); } }
+    ]
+  },
+
+  /* ---- Zou ---- */
+  {
+    id:"zou_1",
+    title:"L'île sur le dos de l'éléphant",
+    condition:()=> state.stage>=4 && state.island==="Zou" && (state.flags.zouStage||0)===0,
+    text:"Zou, l'île portée par un éléphant géant millénaire, abrite le peuple mink. Des rumeurs annoncent une attaque imminente contre leur sanctuaire.",
+    choices:[
+      { label:"Proposer ton aide aux minks", sub:"",
+        resolve(){ state.flags.zouStage=1; state.flags.zouAlly=true; applyMods({charisme:2}); addLog("Les minks accueillent ta proposition avec une confiance prudente.", "good"); } },
+      { label:"Rester à l'écart des affaires du peuple mink", sub:"",
+        resolve(){ state.flags.zouStage=1; addLog("Tu préfères ne pas t'impliquer dans les affaires de Zou.", "neutral"); } }
+    ]
+  },
+  {
+    id:"zou_2",
+    title:"L'assaut sur Zou",
+    condition:()=> state.stage>=4 && state.island==="Zou" && (state.flags.zouStage||0)===1,
+    text:"L'attaque contre Zou commence : des assaillants déferlent sur le dos de l'éléphant géant, décidés à piller le sanctuaire mink.",
+    choices:[
+      { label:"Défendre Zou aux côtés des minks", sub:"Combat",
+        resolve(done){
+          const enemyPower = rand(55,90) - (state.flags.zouAlly?15:0);
+          startBattle(Math.max(30,enemyPower), "des pillards venus attaquer Zou", (outcome)=>{
+            if(outcome==="victory"){
+              state.beli += rand(2000,6000);
+              applyMods({happiness:10});
+              addLog("Zou est sauvée. Le peuple mink célèbre ta bravoure dans tout le sanctuaire.", "good");
+            }
+            done();
+          });
+          return true;
+        }
+      },
+      { label:"Te mettre à l'abri", sub:"",
+        resolve(){ applyMods({happiness:-5}); addLog("Tu te réfugies à l'écart pendant que Zou affronte seule les assaillants.", "neutral"); } }
+    ]
+  },
+
+  /* ---- Elbaf ---- */
+  {
+    id:"elbaf_1",
+    title:"Le jugement du vétéran",
+    condition:()=> state.stage>=4 && state.island==="Elbaf" && (state.flags.elbafStage||0)===0,
+    text:"Elbaf, la terre des guerriers géants, ne respecte que la force et l'honneur. Un vétéran te toise, prêt à juger si tu mérites qu'on t'adresse la parole.",
+    choices:[
+      { label:"Relever son défi avec fierté", sub:"",
+        resolve(){ state.flags.elbafStage=1; state.flags.elbafRespect=true; applyMods({force:2}); addLog("Le vétéran approuve ton audace d'un grognement satisfait.", "good"); } },
+      { label:"Décliner poliment, prudence est mère de sûreté", sub:"",
+        resolve(){ state.flags.elbafStage=1; addLog("Le vétéran hausse les épaules, indifférent à ta prudence.", "neutral"); } }
+    ]
+  },
+  {
+    id:"elbaf_2",
+    title:"Le grand tournoi",
+    condition:()=> state.stage>=4 && state.island==="Elbaf" && (state.flags.elbafStage||0)===1,
+    text:"Les guerriers d'Elbaf organisent un grand tournoi. Y participer pourrait forger ta légende... ou te briser.",
+    choices:[
+      { label:"Participer au tournoi", sub:"Combat",
+        resolve(done){
+          const enemyPower = rand(50,85) - (state.flags.elbafRespect?12:0);
+          startBattle(Math.max(30,enemyPower), "un champion guerrier d'Elbaf", (outcome)=>{
+            if(outcome==="victory"){
+              applyMods({force:3, happiness:12});
+              if(!state.epithet){ state.epithet = pick(EPITHETS); addLog(`Ta victoire au tournoi d'Elbaf te vaut un surnom : "${state.epithet}".`, "major"); }
+              addLog("Tu remportes le tournoi sous les acclamations des géants. Ta légende grandit.", "good");
+            } else if(state.alive){
+              applyMods({happiness:5});
+              addLog("Vaincu·e mais debout, tu gagnes malgré tout le respect des géants pour ton courage.", "neutral");
+            }
+            done();
+          });
+          return true;
+        }
+      },
+      { label:"Observer depuis les gradins", sub:"",
+        resolve(){ addLog("Tu préfères observer le tournoi plutôt que d'y risquer ta peau.", "neutral"); } }
+    ]
   }
 ];
 
