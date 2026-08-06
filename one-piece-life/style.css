@@ -423,3 +423,38 @@ h1,h2,h3{ font-family:'Archivo Black', system-ui, sans-serif; margin:0; }
   .screen{ min-height:90dvh; }
   .bottombar{ border-radius:0 0 22px 22px; }
 }
+
+/* ================= MULTIJOUEUR ================= */
+
+.mp-room-code{
+  color:var(--gold); letter-spacing:2px; font-size:18px;
+}
+
+.mp-lobby-list{ display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+.mp-lobby-row{
+  display:flex; align-items:center; justify-content:space-between;
+  background:var(--sea); border-radius:12px; padding:10px 14px; font-size:14px;
+}
+
+.mp-join-row{ display:flex; gap:8px; margin-top:12px; }
+.mp-join-row input{
+  flex:1; background:var(--sea); border:2px solid transparent; border-radius:12px;
+  padding:12px 14px; color:var(--white); font-size:15px; text-transform:uppercase;
+  letter-spacing:2px; min-width:0;
+}
+.mp-join-row input:focus{ outline:none; border-color:var(--gold-deep); }
+.mp-join-row .btn{ flex-shrink:0; }
+
+.mp-party-bar{
+  display:flex; gap:8px; overflow-x:auto; padding:8px 14px;
+  background:#0f2f4d; border-bottom:2px solid var(--gold-deep);
+}
+.mp-chip{
+  flex:0 0 auto; background:var(--sea); border:2px solid transparent; border-radius:10px;
+  padding:6px 10px; min-width:96px;
+}
+.mp-chip.me{ border-color:var(--gold-deep); }
+.mp-chip.dead{ opacity:.45; }
+.mp-chip.offline{ opacity:.35; filter:grayscale(1); }
+.mp-chip-name{ display:block; font-size:12px; font-weight:700; color:var(--white); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mp-chip-meta{ display:block; font-size:10px; color:#9fb3c8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }

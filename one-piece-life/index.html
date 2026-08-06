@@ -24,6 +24,9 @@
     <div class="title-actions">
       <button id="btnNewGame" class="btn btn-primary btn-lg">Commencer une nouvelle vie</button>
       <button id="btnContinue" class="btn btn-secondary btn-lg" hidden>Reprendre ma vie</button>
+      <!-- MP_BUTTON_START -->
+      <button id="btnMultiplayer" class="btn btn-secondary btn-lg">👥 Multijoueur (1-4 joueurs)</button>
+      <!-- MP_BUTTON_END -->
       <button id="btnHOF" class="btn btn-ghost btn-lg">📜 Livre des légendes</button>
     </div>
     <p class="title-foot">Fan-jeu non officiel, inspiré de l'univers One Piece d'Eiichiro Oda.</p>
@@ -121,5 +124,9 @@
 <div id="toast" class="toast"></div>
 
 <script src="game.js"></script>
+<!-- MP_SCRIPTS_START -->
+<script src="vendor/peerjs.min.js"></script>
+<script src="multiplayer.js"></script>
+<!-- MP_SCRIPTS_END -->
 </body>
 </html>

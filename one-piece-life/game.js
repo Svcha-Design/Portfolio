@@ -1522,6 +1522,7 @@ function birthCharacter(){
   save();
   showScreen("screen-game");
   renderGame();
+  if(window.OPL && window.OPL._afterBirth) window.OPL._afterBirth();
 }
 
 /* ================= AGE UP / EVENTS ================= */
@@ -1562,6 +1563,7 @@ function finishAgeUp(){
   if(state.age===16 && !state.pathChosen){
     setTimeout(openPathChoice, 300);
   }
+  if(window.OPL && window.OPL._afterYearResolved) window.OPL._afterYearResolved();
 }
 
 function childYearGain(){
@@ -3337,6 +3339,8 @@ function renderGame(scrollLog){
 
   document.getElementById("btnAge").style.opacity = state.alive ? 1 : 0.3;
   document.getElementById("btnAge").disabled = !state.alive;
+
+  if(window.OPL && window.OPL._afterRender) window.OPL._afterRender();
 }
 
 /* ================= END SCREEN ================= */
@@ -3397,7 +3401,10 @@ function wire(){
     showScreen("screen-create");
   });
 
-  document.getElementById("btnAge").addEventListener("click", ageUp);
+  document.getElementById("btnAge").addEventListener("click", ()=>{
+    if(window.OPL && window.OPL._onAgeClick && window.OPL._onAgeClick()) return;
+    ageUp();
+  });
   document.getElementById("btnActions").addEventListener("click", openActionsMenu);
   document.getElementById("btnMap").addEventListener("click", openMap);
   document.getElementById("btnCrew").addEventListener("click", openShipView);
@@ -3435,5 +3442,41 @@ function wire(){
 }
 
 document.addEventListener("DOMContentLoaded", wire);
+
+/* ================= EXPORT SURFACE (multijoueur) =================
+   game.js tourne dans une IIFE fermée ; ce petit export explicite est
+   le seul point d'accès pour multiplayer.js, chargé après ce script. */
+window.OPL = {
+  getState: () => state,
+  setState: (s) => { state = s; },
+  freshState,
+  birthCharacter,
+  renderCreateScreen,
+  ageUp,
+  finishAgeUp,
+  death,
+  save,
+  renderGame,
+  showScreen,
+  openModal,
+  closeModal,
+  addLog,
+  applyMods,
+  powerScore,
+  crewCapacity,
+  startBattle,
+  fmt,
+  rand,
+  pick,
+  currentStage,
+  STAGES,
+  ISLAND_ICONS,
+  pathLabel,
+  // hook slots multiplayer.js peut renseigner ; no-op tant qu'ils ne le sont pas
+  _onAgeClick: null,
+  _afterYearResolved: null,
+  _afterBirth: null,
+  _afterRender: null
+};
 
 })();
