@@ -65,6 +65,37 @@ const CREW_ROLES = [
   { role:"Archéologue", statKey:"intelligence" }, { role:"Musicien·ne", statKey:"charisme" },
   { role:"Sabreur·se", statKey:"force" }, { role:"Timonier", statKey:"vitesse" }
 ];
+const CREW_ROLES_MARINE = [
+  { role:"Second·e", statKey:"force" }, { role:"Officier·ère tacticien·ne", statKey:"intelligence" },
+  { role:"Artilleur·se", statKey:"force" }, { role:"Médecin militaire", statKey:"intelligence" },
+  { role:"Tireur·se d'élite", statKey:"vitesse" }, { role:"Instructeur·rice", statKey:"endurance" },
+  { role:"Agent de renseignement", statKey:"intelligence" }, { role:"Officier·ère de liaison", statKey:"charisme" },
+  { role:"Sabreur·se", statKey:"force" }, { role:"Timonier·ère", statKey:"vitesse" }
+];
+const CREW_ROLES_CHASSEUR = [
+  { role:"Second·e", statKey:"force" }, { role:"Traqueur·se", statKey:"vitesse" },
+  { role:"Informateur·rice", statKey:"charisme" }, { role:"Médecin de fortune", statKey:"intelligence" },
+  { role:"Tireur·se d'élite", statKey:"vitesse" }, { role:"Négociateur·rice", statKey:"charisme" },
+  { role:"Archiviste de primes", statKey:"intelligence" }, { role:"Expert·e en évasion", statKey:"endurance" },
+  { role:"Sabreur·se", statKey:"force" }, { role:"Éclaireur·se", statKey:"vitesse" }
+];
+const CREW_ROLES_REVOLUTIONNAIRE = [
+  { role:"Second·e", statKey:"force" }, { role:"Stratège", statKey:"intelligence" },
+  { role:"Artificier·ère", statKey:"force" }, { role:"Médecin clandestin·e", statKey:"intelligence" },
+  { role:"Tireur·se d'élite", statKey:"vitesse" }, { role:"Messager·ère", statKey:"vitesse" },
+  { role:"Recruteur·se", statKey:"charisme" }, { role:"Archiviste", statKey:"intelligence" },
+  { role:"Sabreur·se", statKey:"force" }, { role:"Agent·e de terrain", statKey:"endurance" }
+];
+const CREW_ROLES_BY_PATH = {
+  pirate: CREW_ROLES, marine: CREW_ROLES_MARINE,
+  chasseur: CREW_ROLES_CHASSEUR, revolutionnaire: CREW_ROLES_REVOLUTIONNAIRE
+};
+const CREW_LABELS = {
+  pirate: { action:"Recruter un·e compagnon·gne", groupTitle:"Équipage", poss:"Ton", group:"équipage", member:"compagnon·gne", emptyMsg:"Aucun compagnon de route pour l'instant. Recrute-en depuis le menu Actions." },
+  marine: { action:"Recruter un·e subordonné·e", groupTitle:"Escouade", poss:"Ton", group:"escouade", member:"subordonné·e", emptyMsg:"Aucun·e subordonné·e pour l'instant. Recrute-en depuis le menu Actions." },
+  chasseur: { action:"Recruter un·e partenaire", groupTitle:"Équipe de chasse", poss:"Ton", group:"équipe", member:"partenaire", emptyMsg:"Aucun·e partenaire pour l'instant. Recrute-en depuis le menu Actions." },
+  revolutionnaire: { action:"Recruter un·e camarade", groupTitle:"Cellule", poss:"Ta", group:"cellule", member:"camarade", emptyMsg:"Aucun·e camarade pour l'instant. Recrute-en depuis le menu Actions." }
+};
 
 const STAT_LABELS = { force:"Force", vitesse:"Vitesse", endurance:"Endurance", intelligence:"Intelligence", charisme:"Charisme" };
 
@@ -1399,6 +1430,10 @@ function powerScore(){
   return Math.round(p + crewPower + shipPower);
 }
 
+function crewCapacity(){
+  return state.path==="pirate" ? SHIP_TIERS[state.ship.tier].capacity : SHIP_TIERS[0].capacity;
+}
+
 function currentStage(){ return STAGES[state.stage]; }
 
 function toast(msg){
@@ -2498,7 +2533,11 @@ function openActionsMenu(){
   }
   if(state.path==="pirate"){
     rows.push({ label:"Chercher un fruit du démon", sub: state.devilFruit? "Déjà obtenu" : "Chance rare de trouver un pouvoir", fn:seekDevilFruit, disabled: !!state.devilFruit, cost:20 });
-    rows.push({ label:"Recruter un·e compagnon·gne", sub:`Équipage ${state.crew.length}/${SHIP_TIERS[state.ship.tier].capacity} · coûte du Beli`, fn:scoutRecruits, cost:15, disabled: state.crew.length>=SHIP_TIERS[state.ship.tier].capacity });
+  }
+  if(CREW_LABELS[state.path]){
+    const labels = CREW_LABELS[state.path];
+    const capacity = crewCapacity();
+    rows.push({ label:labels.action, sub:`${labels.groupTitle} ${state.crew.length}/${capacity} · coûte du Beli`, fn:scoutRecruits, cost:15, disabled: state.crew.length>=capacity });
   }
   if(state.islandVault && state.islandVault.island===state.island && state.islandVault.rumorHeard && !state.islandVault.resolved){
     const remaining = state.islandVault.chests.filter(c=>!c.opened).length;
@@ -2772,7 +2811,7 @@ function seekFight(){
   startBattle(enemyPower, pick(["un pirate rival","un officier de Marine","un chasseur de primes","un monstre marin"]), ()=>{});
 }
 function offerDevilFruit(fruit, onDone){
-  const canGiveCrew = state.path==="pirate" && state.crew.length>0;
+  const canGiveCrew = state.path!=="civil" && state.crew.length>0;
   const FRUIT_SELL_VALUES = { "Logia":()=>rand(6000,12000), "Zoan Mythique":()=>rand(6000,12000), "Paramecia Spéciale":()=>rand(4000,8000) };
   const choices = [
     { label:"La manger", sub:`Fruit ${fruit.type} — effet permanent`,
@@ -2784,7 +2823,8 @@ function offerDevilFruit(fruit, onDone){
     }
   ];
   if(canGiveCrew){
-    choices.push({ label:"La donner à l'équipage", sub:"Renforce un·e compagnon·gne au hasard",
+    const giveLabels = CREW_LABELS[state.path]||CREW_LABELS.pirate;
+    choices.push({ label:`La donner à ${giveLabels.poss.toLowerCase()} ${giveLabels.group}`, sub:`Renforce un·e ${giveLabels.member} au hasard`,
       resolve(){
         const member = pick(state.crew);
         const boost = rand(15,30);
@@ -2829,15 +2869,18 @@ function seekDevilFruit(){
   }
 }
 function scoutRecruits(){
-  const capacity = SHIP_TIERS[state.ship.tier].capacity;
-  if(state.crew.length>=capacity){ toast("Ton équipage est complet pour ce navire !"); return; }
+  const labels = CREW_LABELS[state.path];
+  if(!labels) return;
+  const capacity = crewCapacity();
+  if(state.crew.length>=capacity){ toast(`${labels.poss} ${labels.group} est au complet !`); return; }
   const cost = rand(400,900) * currentStage().danger;
   if(state.beli < cost){ toast(`Il te faut au moins ${fmt(cost)} Beli pour recruter.`); return; }
   state.beli -= cost;
 
+  const rolePool = CREW_ROLES_BY_PATH[state.path] || CREW_ROLES;
   const candidates = [];
   for(let i=0;i<3;i++){
-    const roleData = pick(CREW_ROLES);
+    const roleData = pick(rolePool);
     const power = rand(10,30) + Math.round(state.charisme/2);
     const bonusAmount = rand(2,5);
     candidates.push({ name: pick(CREW_FIRST), role: roleData.role, power, statKey: roleData.statKey, bonusAmount });
@@ -2872,7 +2915,8 @@ function openRecruitChoice(candidates){
       const c = candidates[+key];
       state.crew.push({ name:c.name, role:c.role, power:c.power, loyalty: rand(50,90) });
       applyMods({ [c.statKey]: c.bonusAmount });
-      addLog(`${c.name} rejoint ton équipage en tant que ${c.role.toLowerCase()} ! Ses conseils t'apportent +${c.bonusAmount} ${STAT_LABELS[c.statKey]}.`, "good");
+      const labels = CREW_LABELS[state.path]||CREW_LABELS.pirate;
+      addLog(`${c.name} rejoint ${labels.poss.toLowerCase()} ${labels.group} en tant que ${c.role.toLowerCase()} ! Ses conseils t'apportent +${c.bonusAmount} ${STAT_LABELS[c.statKey]}.`, "good");
       save();
       renderGame(true);
     });
@@ -3136,37 +3180,48 @@ function openMap(){
 /* ================= CREW VIEW ================= */
 
 function openShipView(){
+  const isPirate = state.path==="pirate";
+  const labels = CREW_LABELS[state.path];
   const tier = SHIP_TIERS[state.ship.tier];
   const nextTier = SHIP_TIERS[state.ship.tier+1];
 
-  let html = `
-    <div class="action-row" style="cursor:default;">
-      <div><div class="a-label">${tier.name}</div><div class="a-sub">Capacité ${state.crew.length}/${tier.capacity} · Puissance de feu ${tier.firepower}</div></div>
-    </div>`;
+  let html = "";
 
-  if(nextTier){
-    const affordable = state.beli >= nextTier.cost;
-    html += `<div class="action-row ${affordable?'':'disabled'}" id="btnUpgradeShip">
-      <div><div class="a-label">Améliorer : ${nextTier.name}</div><div class="a-sub">Capacité ${nextTier.capacity} · Puissance de feu ${nextTier.firepower} · ${fmt(nextTier.cost)} Beli</div></div>
-      <div class="a-val">${affordable?'⬆️':'🔒'}</div>
-    </div>`;
-  } else {
-    html += `<div class="action-row" style="cursor:default;"><div><div class="a-label">Navire au niveau maximum</div></div></div>`;
+  if(isPirate){
+    html += `
+      <div class="action-row" style="cursor:default;">
+        <div><div class="a-label">${tier.name}</div><div class="a-sub">Capacité ${state.crew.length}/${tier.capacity} · Puissance de feu ${tier.firepower}</div></div>
+      </div>`;
+
+    if(nextTier){
+      const affordable = state.beli >= nextTier.cost;
+      html += `<div class="action-row ${affordable?'':'disabled'}" id="btnUpgradeShip">
+        <div><div class="a-label">Améliorer : ${nextTier.name}</div><div class="a-sub">Capacité ${nextTier.capacity} · Puissance de feu ${nextTier.firepower} · ${fmt(nextTier.cost)} Beli</div></div>
+        <div class="a-val">${affordable?'⬆️':'🔒'}</div>
+      </div>`;
+    } else {
+      html += `<div class="action-row" style="cursor:default;"><div><div class="a-label">Navire au niveau maximum</div></div></div>`;
+    }
+  } else if(labels){
+    html += `
+      <div class="action-row" style="cursor:default;">
+        <div><div class="a-label">${labels.groupTitle}</div><div class="a-sub">${state.crew.length}/${crewCapacity()} membres</div></div>
+      </div>`;
   }
 
-  if(state.path==="pirate" && state.crew.length>0){
+  if(labels && state.crew.length>0){
     html += state.crew.map(c=>`
       <div class="crew-card">
         <div><b>${c.name}</b><span>${c.role}</span></div>
         <div class="a-val">💪 ${c.power}</div>
       </div>`).join("");
-  } else if(state.path==="pirate"){
-    html += `<p style="color:#9fb3c8;font-size:13px;margin-top:10px;">Aucun compagnon de route pour l'instant. Recrute-en depuis le menu Actions.</p>`;
+  } else if(labels){
+    html += `<p style="color:#9fb3c8;font-size:13px;margin-top:10px;">${labels.emptyMsg}</p>`;
   } else {
-    html += `<p style="color:#9fb3c8;font-size:13px;margin-top:10px;">Le navire et l'équipage sont réservés à la vie de pirate.</p>`;
+    html += `<p style="color:#9fb3c8;font-size:13px;margin-top:10px;">Le navire et l'équipage sont réservés aux voies actives : Pirate, Marine, Chasseur de primes ou Révolutionnaire.</p>`;
   }
 
-  openModal("Navire", html);
+  openModal(isPirate ? "Navire" : (labels ? labels.groupTitle : "Navire"), html);
   const upgradeBtn = document.getElementById("btnUpgradeShip");
   if(upgradeBtn){
     upgradeBtn.addEventListener("click", ()=>{
