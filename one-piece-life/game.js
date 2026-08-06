@@ -1497,7 +1497,8 @@ function freshState(){
     keys:0, islandVault:null,
     energy:100,
     ship:{ tier:0 },
-    rival:null, ally:null, weapon:null
+    rival:null, ally:null, weapon:null,
+    extraLives:1
   };
 }
 
@@ -1590,6 +1591,7 @@ function openModal(title, bodyHTML){
 }
 function closeModal(){
   document.getElementById("modalOverlay").classList.remove("open");
+  if(window.OPL && window.OPL._onModalClosed) window.OPL._onModalClosed();
 }
 
 /* ================= CHARACTER CREATION ================= */
@@ -2784,6 +2786,18 @@ function checkBountyReveal(){
 }
 
 function death(cause){
+  if(state.extraLives>0){
+    state.extraLives -= 1;
+    const label = DEATH_CAUSES[cause] || "Ta légende a failli s'achever ici.";
+    const healthBack = rand(35,55);
+    const belyLoss = Math.round(state.beli*0.3);
+    state.health = healthBack;
+    state.beli = Math.max(0, state.beli-belyLoss);
+    addLog(`${label} ...mais contre toute attente, tu t'en sors : une vie de rechange te ramène in extremis, ébranlé·e et bien plus pauvre (-${fmt(belyLoss)} Beli), avec ${healthBack} PV.`, "major");
+    save();
+    renderGame(true);
+    return;
+  }
   state.alive = false;
   const label = DEATH_CAUSES[cause] || "Ta légende s'achève ici.";
   addLog(label, "death");
@@ -2871,6 +2885,10 @@ function openActionsMenu(){
   rows.push({ label:"Explorer l'île", sub:`Choisis un lieu à visiter · Clés : ${state.keys}`, fn:openIslandMap, cost:15 });
   rows.push({ label:"Soins", sub:`Santé ${Math.round(state.health)}/100`, fn:openHealMenu, cost:0, disabled: state.health>=100 });
   rows.push({ label:"Arsenal", sub: state.weapon ? `Équipée : ${state.weapon.name}` : "Aucune arme équipée", fn:openWeaponMarket, cost:15 });
+  {
+    const lifeCost = Math.round(3000 + state.age*150);
+    rows.push({ label:"Vie de rechange", sub: `${state.extraLives} en réserve (max 2) · ${fmt(lifeCost)} Beli pour une de plus`, fn:buyExtraLife, cost:10, disabled: state.extraLives>=2 || state.beli<lifeCost });
+  }
 
   if(["pirate","marine","chasseur","revolutionnaire"].includes(state.path)){
     rows.push({ label:"Chercher un combat", sub:"Tente ta chance contre un adversaire", fn:seekFight, cost:25 });
@@ -3066,6 +3084,17 @@ function exploreTavern(){
     addLog("La taverne est calme ce soir, rien à signaler.", "neutral");
   }
   save(); renderGame(true);
+}
+
+function buyExtraLife(){
+  const cost = Math.round(3000 + state.age*150);
+  if(state.extraLives>=2){ toast("Tu as déjà le maximum de vies de rechange (2)."); return; }
+  if(state.beli<cost){ toast(`Il te faut au moins ${fmt(cost)} Beli.`); return; }
+  state.beli -= cost;
+  state.extraLives += 1;
+  addLog(`Tu investis ${fmt(cost)} Beli dans des dispositions discrètes pour t'assurer une porte de sortie si le pire devait arriver. (${state.extraLives} vie(s) de rechange en réserve)`, "good");
+  save();
+  renderGame(true);
 }
 
 function openHealMenu(){
@@ -3614,6 +3643,9 @@ function openStatus(){
     <div class="action-row" style="cursor:default;">
       <div><div class="a-label">Arme</div><div class="a-sub">${state.weapon ? state.weapon.name : 'Aucune arme équipée'}</div></div>
     </div>
+    <div class="action-row" style="cursor:default;">
+      <div><div class="a-label">Vies de rechange</div><div class="a-sub">${state.extraLives>0 ? `${state.extraLives} en réserve — te ramène automatiquement en cas de mort` : "Aucune — un décès sera définitif"}</div></div>
+    </div>
     ${state.rival && !state.rival.defeated ? `
     <div class="action-row" style="cursor:default;">
       <div><div class="a-label">Rival</div><div class="a-sub">${state.rival.name} "${state.rival.epithet}" · ${state.rival.encounters}/4 affrontements</div></div>
@@ -3793,6 +3825,7 @@ function wire(){
     if(existing.rival===undefined) existing.rival = null;
     if(existing.ally===undefined) existing.ally = null;
     if(existing.weapon===undefined) existing.weapon = null;
+    if(existing.extraLives===undefined) existing.extraLives = 0;
     document.getElementById("btnContinue").hidden = false;
     document.getElementById("btnContinue").addEventListener("click", ()=>{
       state = existing;
@@ -3838,7 +3871,8 @@ window.OPL = {
   _afterYearResolved: null,
   _afterBirth: null,
   _afterRender: null,
-  _onSpecialEvent: null
+  _onSpecialEvent: null,
+  _onModalClosed: null
 };
 
 })();

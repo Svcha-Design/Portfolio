@@ -14,6 +14,7 @@ const ROOM_PREFIX = "opl6-";
 const MAX_PLAYERS = 4;
 const ENCOUNTER_TIMEOUT_MS = 25000;
 const VOTE_TIMEOUT_MS = 25000;
+const CHAT_LOG_MAX = 100;
 
 const mp = {
   active: false,
@@ -29,10 +30,13 @@ const mp = {
   pendingEncounters: {},
   encounterSeq: 0,
   pendingVotes: {},
-  voteSeq: 0
+  voteSeq: 0,
+  chatLog: [],
+  chatUnread: 0
 };
 
 let pendingVoteEvent = null; // l'événement (choices avec resolve()) en attente de vote, côté joueur concerné
+let chatModalOpen = false;
 
 /* ================= TRANSPORT (isolé pour permettre un test avec mock) ================= */
 
@@ -172,6 +176,14 @@ function hostHandle(fromId, msg){
     v.votes[fromId] = msg.choice;
     const active = activePlayers();
     if(active.length>0 && active.every(pl=>v.votes[pl.id]!==undefined)) finalizeVote(msg.seq);
+    return;
+  }
+
+  if(msg.type==="chat_send"){
+    const text = String(msg.text||"").slice(0,300).trim();
+    if(!text) return;
+    const entry = { fromId, fromName: p.name || "Joueur", text, ts: Date.now() };
+    hostBroadcastAndApplyLocally({ type:"chat_message", entry });
     return;
   }
 }
@@ -390,6 +402,17 @@ function clientApply(msg){
       }
       break;
     }
+    case "chat_message": {
+      mp.chatLog.push(msg.entry);
+      if(mp.chatLog.length>CHAT_LOG_MAX) mp.chatLog.shift();
+      if(chatModalOpen){
+        renderChatMessages();
+      } else if(msg.entry.fromId!==mp.selfId){
+        mp.chatUnread++;
+      }
+      renderPartyBar();
+      break;
+    }
     case "room_full": {
       mpToast("Cette partie est déjà complète (4 joueurs max).");
       deactivateMultiplayer();
@@ -473,7 +496,7 @@ function renderPartyBar(){
     gameScreen.insertBefore(bar, logEl || null);
   }
   const ids = Object.keys(mp.players);
-  bar.innerHTML = ids.map(id=>{
+  const chips = ids.map(id=>{
     const p = mp.players[id];
     const me = id===mp.selfId;
     const dead = p.alive===false;
@@ -483,6 +506,10 @@ function renderPartyBar(){
       <span class="mp-chip-meta">${p.age!=null ? ("Âge "+p.age) : "création..."}${p.island ? (" · "+p.island) : ""}</span>
     </div>`;
   }).join("");
+  const unreadBadge = mp.chatUnread>0 ? `<span class="mp-chat-badge">${mp.chatUnread>9?"9+":mp.chatUnread}</span>` : "";
+  bar.innerHTML = chips + `<button id="mpChatBtn" class="mp-chat-btn" type="button">💬${unreadBadge}</button>`;
+  const chatBtn = document.getElementById("mpChatBtn");
+  if(chatBtn) chatBtn.addEventListener("click", openChatModal);
 }
 
 /* ================= UI : rencontre sur une île commune ================= */
@@ -522,6 +549,65 @@ function showVoteModal(msg){
   });
 }
 
+/* ================= UI : chat d'équipage ================= */
+
+function openChatModal(){
+  chatModalOpen = true;
+  mp.chatUnread = 0;
+  renderPartyBar();
+  const html = `
+    <div id="mpChatMessages" class="mp-chat-messages"></div>
+    <div class="mp-chat-input-row">
+      <input type="text" id="mpChatInput" maxlength="300" placeholder="Écris un message...">
+      <button id="mpChatSendBtn" class="btn btn-chip" type="button">Envoyer</button>
+    </div>`;
+  window.OPL.openModal("💬 Chat de l'équipage", html);
+  renderChatMessages();
+  const input = document.getElementById("mpChatInput");
+  const sendBtn = document.getElementById("mpChatSendBtn");
+  const doSend = ()=>{
+    if(!input) return;
+    const text = input.value.trim();
+    if(!text) return;
+    input.value = "";
+    sendChatMessage(text);
+  };
+  if(sendBtn) sendBtn.addEventListener("click", doSend);
+  if(input){
+    input.addEventListener("keydown", (e)=>{ if(e.key==="Enter") doSend(); });
+    input.focus();
+  }
+}
+
+function renderChatMessages(){
+  const el = document.getElementById("mpChatMessages");
+  if(!el) return;
+  if(mp.chatLog.length===0){
+    el.innerHTML = `<p class="modal-intro">Aucun message pour l'instant — dis bonjour à l'équipage !</p>`;
+  } else {
+    el.innerHTML = mp.chatLog.map(m=>{
+      const mine = m.fromId===mp.selfId;
+      return `<div class="mp-chat-msg ${mine?"mine":""}">
+        <span class="mp-chat-msg-name">${mine?"Toi":(m.fromName||"?")}</span>
+        <span class="mp-chat-msg-text">${escapeHtml(m.text)}</span>
+      </div>`;
+    }).join("");
+  }
+  el.scrollTop = el.scrollHeight;
+}
+
+function escapeHtml(str){
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function sendChatMessage(text){
+  const msg = { type:"chat_send", text };
+  if(mp.isHost) hostHandle(mp.selfId, msg);
+  else sendToHost(msg);
+}
+
 function showEncounterModal(msg){
   const other = msg.other;
   const html = `
@@ -554,7 +640,7 @@ function showEncounterModal(msg){
 /* ================= UI : salle d'attente (lobby) ================= */
 
 function renderLobbyIfOpen(){
-  if(mp.phase!=="lobby") return;
+  if(mp.phase!=="lobby" || chatModalOpen) return;
   renderLobbyModal();
 }
 
@@ -572,6 +658,7 @@ function renderLobbyModal(){
     ${mp.isHost
       ? `<button id="mpStartGame" class="btn btn-primary btn-lg" ${canStart?"":"disabled"} style="margin-top:14px;">Lancer la partie (${ids.length}/${MAX_PLAYERS})</button>`
       : `<p class="modal-intro" style="margin-top:14px;">En attente que l'hôte lance la partie...</p>`}
+    <button id="mpLobbyChatBtn" class="btn btn-secondary" style="margin-top:8px;">💬 Chat</button>
     <button id="mpLeaveLobby" class="btn btn-ghost" style="margin-top:8px;">Quitter</button>`;
   window.OPL.openModal(mp.isHost ? "Salle d'attente (hôte)" : "Salle d'attente", html);
   const copyBtn = document.getElementById("mpCopyCode");
@@ -580,6 +667,8 @@ function renderLobbyModal(){
       navigator.clipboard.writeText(mp.roomCode).then(()=> mpToast("Code copié !")).catch(()=>{});
     }
   });
+  const lobbyChatBtn = document.getElementById("mpLobbyChatBtn");
+  if(lobbyChatBtn) lobbyChatBtn.addEventListener("click", openChatModal);
   const startBtn = document.getElementById("mpStartGame");
   if(startBtn) startBtn.addEventListener("click", ()=>{
     if(startBtn.disabled) return;
@@ -724,7 +813,10 @@ function deactivateMultiplayer(){
   mp.phase = "idle";
   mp.coopVoteMode = false;
   mp.pendingVotes = {};
+  mp.chatLog = [];
+  mp.chatUnread = 0;
   pendingVoteEvent = null;
+  chatModalOpen = false;
   try{ if(mp.peer) mp.peer.destroy(); }catch(e){}
   mp.peer = null;
   mp.conns = {};
@@ -769,6 +861,9 @@ function wireHooks(){
     window.OPL.renderGame(true);
     startVoteForEvent(ev);
     return true;
+  };
+  window.OPL._onModalClosed = function(){
+    chatModalOpen = false;
   };
 }
 
