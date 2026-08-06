@@ -392,7 +392,7 @@ h1,h2,h3{ font-family:'Archivo Black', system-ui, sans-serif; margin:0; }
 .crew-card span{ font-size:11px; color:#9fb3c8; }
 
 /* ---------- END SCREEN ---------- */
-#screen-end{ justify-content:center; align-items:center; text-align:center; gap:14px; }
+#screen-end{ justify-content:flex-start; align-items:center; text-align:center; gap:14px; overflow-y:auto; }
 .end-flag{ font-size:48px; }
 .end-cause{ color:#c7d4e2; font-size:14px; padding:0 10px; }
 .end-stats{ width:100%; display:flex; flex-direction:column; gap:8px; margin:10px 0 20px; }
