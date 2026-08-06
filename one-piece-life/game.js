@@ -126,11 +126,11 @@ const MARINE_RANKS = [
 
 const STAGES = [
   { id:0, name:"East Blue", req:0, danger:1 },
-  { id:1, name:"Reverse Mountain", req:35, danger:2 },
-  { id:2, name:"Paradise (Grand Line)", req:45, danger:3 },
-  { id:3, name:"Le Mur de la Marine Rouge", req:90, danger:4 },
-  { id:4, name:"Nouveau Monde", req:110, danger:5 },
-  { id:5, name:"Laugh Tale", req:220, danger:7 }
+  { id:1, name:"Reverse Mountain", req:50, danger:2 },
+  { id:2, name:"Paradise (Grand Line)", req:70, danger:3 },
+  { id:3, name:"Le Mur de la Marine Rouge", req:130, danger:4 },
+  { id:4, name:"Nouveau Monde", req:180, danger:5 },
+  { id:5, name:"Laugh Tale", req:260, danger:7 }
 ];
 
 const ISLANDS = {
@@ -3119,12 +3119,14 @@ function islandChipHTML(name, stage){
 function stageBlockHTML(s, p){
   const reached = state.maxStage>=s.id;
   const isCurrent = state.stage===s.id;
-  const nextAvailable = state.maxStage===s.id-1 && p>=s.req;
+  const canLeaveEastBlue = state.pathChosen;
+  const nextAvailable = state.maxStage===s.id-1 && p>=s.req && canLeaveEastBlue;
   const locked = !reached && !nextAvailable;
 
   let statusLine;
   if(isCurrent) statusLine = "Position actuelle";
   else if(reached) statusLine = "Région déjà explorée";
+  else if(!canLeaveEastBlue && state.maxStage===s.id-1) statusLine = "Verrouillé — choisis ta voie à l'âge adulte pour prendre la mer";
   else if(nextAvailable) statusLine = `Région accessible — puissance requise ${s.req} (toi : ${p})`;
   else statusLine = `Verrouillé — puissance requise : ${s.req}`;
 
@@ -3160,7 +3162,7 @@ function openMap(){
       if(!mapInsightCache[name]) mapInsightCache[name] = buildIslandInsight(stageId);
       const insight = mapInsightCache[name];
       const stage = STAGES[stageId];
-      const canTravel = state.maxStage>=stageId || (state.maxStage===stageId-1 && p>=stage.req);
+      const canTravel = state.maxStage>=stageId || (state.maxStage===stageId-1 && p>=stage.req && state.pathChosen);
       const already = state.stage===stageId && state.island===name;
       detail.hidden = false;
       detail.innerHTML = `
