@@ -1142,6 +1142,60 @@ const DISCOVERY_EVENTS = [
     }
   },
   {
+    id:"chance_encounter",
+    condition:()=> true,
+    resolve(){
+      const flavor = pick([
+        "Tu croises un vieux sage qui partage avec toi quelques conseils avisés.",
+        "Une conversation inattendue avec un inconnu t'ouvre l'esprit.",
+        "Un enfant du village te remercie pour un petit geste, touché·e par sa gratitude.",
+        "Un ancien combattant reconnaît en toi un potentiel certain."
+      ]);
+      const statKey = pick(["force","vitesse","endurance","intelligence","charisme"]);
+      applyMods({ [statKey]:1, happiness:4 });
+      addLog(flavor, "neutral");
+    }
+  },
+  {
+    id:"fruit_collector",
+    condition:()=> !!state.devilFruit && !state.flags.fruitCollectorAsked,
+    resolve(done){
+      state.flags.fruitCollectorAsked = true;
+      addLog("Un collectionneur excentrique t'aborde, fasciné par les rumeurs entourant ton pouvoir.", "major");
+      const offer = rand(15000,35000);
+      const choices = [
+        { label:`Vendre ton fruit pour ${fmt(offer)} Beli`, sub:"Tu perds définitivement ses pouvoirs",
+          resolve(){
+            const reversed = {};
+            for(const k in state.devilFruit.mods) reversed[k] = -state.devilFruit.mods[k];
+            applyMods(reversed);
+            state.beli += offer;
+            addLog(`Tu cèdes le ${state.devilFruit.name} contre une fortune. Tes pouvoirs s'évanouissent.`, "major");
+            state.devilFruit = null;
+          }
+        },
+        { label:"Refuser, ce pouvoir n'a pas de prix", sub:"",
+          resolve(){ addLog("Tu déclines poliment son offre extravagante.", "neutral"); } }
+      ];
+      pendingChoice = { choices, onResolve:(idx)=>{
+        choices[idx].resolve();
+        save();
+        renderGame(true);
+        done();
+      }};
+      const html = choices.map((c,i)=>`
+        <div class="action-row" data-choice="${i}">
+          <div><div class="a-label">${c.label}</div>${c.sub?`<div class="a-sub">${c.sub}</div>`:''}</div>
+          <div class="a-val">→</div>
+        </div>`).join("");
+      openModal("Une offre alléchante", html);
+      document.querySelectorAll("[data-choice]").forEach(el=>{
+        el.addEventListener("click", ()=> resolvePendingChoice(+el.dataset.choice));
+      });
+      return true;
+    }
+  },
+  {
     id:"devilfruit_spawn",
     condition:()=> !state.devilFruit && ["pirate","chasseur"].includes(state.path),
     resolve(done){
@@ -2435,7 +2489,7 @@ function openActionsMenu(){
   rows.push({ label:"Entraînement physique", sub:`Force ${state.force} / Vitesse ${state.vitesse} / Endurance ${state.endurance}`, fn:trainPhysical, cost:20 });
   rows.push({ label:"Étudier", sub:`Intelligence ${state.intelligence}`, fn:trainMind, cost:15 });
   rows.push({ label:"Socialiser", sub:`Charisme ${state.charisme} · Bonheur`, fn:socialize, cost:15 });
-  rows.push({ label:"Fouiller l'île", sub:`Clés : ${state.keys}`, fn:searchIsland, cost:15 });
+  rows.push({ label:"Explorer l'île", sub:`Choisis un lieu à visiter · Clés : ${state.keys}`, fn:openIslandMap, cost:15 });
   rows.push({ label:"Soins", sub:`Santé ${Math.round(state.health)}/100`, fn:openHealMenu, cost:0, disabled: state.health>=100 });
   rows.push({ label:"Arsenal", sub: state.weapon ? `Équipée : ${state.weapon.name}` : "Aucune arme équipée", fn:openWeaponMarket, cost:15 });
 
@@ -2496,20 +2550,137 @@ function socialize(){
   save(); renderGame(true);
   toast("+ Charisme / Bonheur");
 }
-function searchIsland(){
+const ISLAND_POIS = [
+  { id:"village", icon:"🏘️", name:"Le village" },
+  { id:"nature", icon:"🌿", name:"La nature sauvage" },
+  { id:"port", icon:"⚓", name:"Le port" },
+  { id:"ruins", icon:"🗿", name:"Ruines & grottes" },
+  { id:"tavern", icon:"🍺", name:"La taverne" }
+];
+
+function openIslandMap(){
+  const label = state.island || STAGES[state.stage].name;
+  const html = `<p class="modal-intro">Choisis un lieu à explorer à ${label}.</p>
+    <div class="poi-grid">${ISLAND_POIS.map(p=>`
+      <div class="poi-card" data-poi="${p.id}">
+        <span class="poi-icon">${p.icon}</span>
+        <span class="poi-name">${p.name}</span>
+      </div>`).join("")}</div>`;
+  openModal(`Explorer ${label}`, html);
+  document.querySelectorAll("[data-poi]").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      const id = el.dataset.poi;
+      closeModal();
+      explorePOI(id);
+    });
+  });
+}
+
+function explorePOI(id){
+  if(id==="village") return exploreVillage();
+  if(id==="nature") return exploreNature();
+  if(id==="port") return explorePort();
+  if(id==="ruins") return exploreRuins();
+  if(id==="tavern") return exploreTavern();
+}
+
+function exploreVillage(){
   const roll = Math.random();
-  if(roll<0.4){
-    state.keys += 1;
-    addLog("Tu mets la main sur une vieille clé rouillée en fouillant les environs.", "good");
-    toast("+1 clé");
-  } else if(roll<0.7){
-    const gain = rand(100,500);
+  if(roll<0.35){
+    applyMods({charisme:2, happiness:5});
+    addLog("Tu discutes avec les habitants du village, qui t'accueillent chaleureusement.", "good");
+  } else if(roll<0.6){
+    const gain = rand(200,600);
     state.beli += gain;
-    addLog(`Tu trouves ${fmt(gain)} Beli abandonnés sur le chemin.`, "good");
-    toast(`+${fmt(gain)} Beli`);
+    addLog(`Un marchand reconnaissant te remercie pour un service rendu : ${fmt(gain)} Beli.`, "good");
+  } else if(roll<0.8 && state.path==="pirate"){
+    applyMods({intelligence:1});
+    addLog("Les villageois te parlent d'un équipage prometteur qui pourrait vouloir embarquer avec toi.", "neutral");
   } else {
-    addLog("Tu ne trouves rien d'intéressant cette fois.", "neutral");
-    toast("Rien trouvé");
+    addLog("Le village vaque à ses occupations sans incident notable.", "neutral");
+  }
+  save(); renderGame(true);
+}
+
+function exploreNature(){
+  const roll = Math.random();
+  if(roll<0.3){
+    state.keys += 1;
+    addLog("Tu déniches une vieille clé rouillée cachée sous des racines.", "good");
+  } else if(roll<0.55){
+    applyMods({endurance:1});
+    addLog("Une randonnée exigeante à travers la végétation dense t'endurcit.", "neutral");
+  } else if(roll<0.75){
+    state.health = clamp(state.health-rand(5,12),0,100);
+    addLog("Une créature sauvage te surprend et t'égratigne avant de s'enfuir.", "bad");
+  } else {
+    const gain = rand(100,400);
+    state.beli += gain;
+    addLog(`Tu trouves des plantes rares à revendre : ${fmt(gain)} Beli.`, "good");
+  }
+  save(); renderGame(true);
+}
+
+function explorePort(){
+  const roll = Math.random();
+  if(roll<0.3){
+    state.keys += 1;
+    addLog("Un vieux marin ivre te glisse une clé étrange contre quelques services rendus.", "good");
+  } else if(roll<0.55){
+    addLog("Tu écoutes les rumeurs des quais : rien de bien nouveau aujourd'hui.", "neutral");
+  } else if(roll<0.75){
+    const gain = rand(150,500);
+    state.beli += gain;
+    addLog(`Tu donnes un coup de main au déchargement d'un navire : ${fmt(gain)} Beli.`, "good");
+  } else {
+    state.health = clamp(state.health-rand(6,14),0,100);
+    addLog("Une rixe éclate sur les quais et tu en sors avec quelques bleus.", "bad");
+  }
+  save(); renderGame(true);
+}
+
+function exploreRuins(){
+  if(!state.devilFruit && !state.islandVault && Math.random()<0.45){
+    addLog("Au détour de ruines oubliées, tu perçois une présence étrange...", "neutral");
+    state.islandVault = { island: state.island, stageId: state.stage, rumorHeard:false, chests: buildVaultChests(), resolved:false };
+    save();
+    openRumorChoice();
+    return;
+  }
+  const roll = Math.random();
+  if(roll<0.3){
+    const gain = rand(500,1500);
+    state.beli += gain;
+    addLog(`Tu mets la main sur un lot d'antiquités que tu revends pour ${fmt(gain)} Beli.`, "good");
+  } else if(roll<0.5 && state.stage>=1 && state.intelligence>=20){
+    state.flags.poneglyphFragments = (state.flags.poneglyphFragments||0)+1;
+    addLog("Ces ruines cachent une inscription ancienne, semblable à un fragment de Poneglyphe.", "good");
+    if(!state.flags.hasRoadPoneglyph && state.flags.poneglyphFragments>=3){
+      state.flags.hasRoadPoneglyph = true;
+      addLog("Tes fragments accumulés forment un Poneglyphe Route complet !", "major");
+    }
+  } else if(roll<0.7){
+    state.health = clamp(state.health-rand(8,16),0,100);
+    addLog("Un piège ancien se déclenche alors que tu explores les ruines.", "bad");
+  } else {
+    addLog("Ces ruines gardent leurs secrets pour aujourd'hui.", "neutral");
+  }
+  save(); renderGame(true);
+}
+
+function exploreTavern(){
+  const roll = Math.random();
+  if(roll<0.3){
+    applyMods({charisme:1, happiness:6});
+    addLog("Une soirée conviviale à la taverne te remonte le moral.", "good");
+  } else if(roll<0.5 && state.rival && !state.rival.defeated){
+    addLog(`Des rumeurs de comptoir évoquent les exploits de ${state.rival.name} "${state.rival.epithet}" quelque part non loin d'ici.`, "neutral");
+  } else if(roll<0.7){
+    const gain = rand(100,350);
+    state.beli += gain;
+    addLog(`Tu gagnes une petite fortune à un pari de comptoir : ${fmt(gain)} Beli.`, "good");
+  } else {
+    addLog("La taverne est calme ce soir, rien à signaler.", "neutral");
   }
   save(); renderGame(true);
 }

@@ -369,6 +369,17 @@ h1,h2,h3{ font-family:'Archivo Black', system-ui, sans-serif; margin:0; }
 .qte-buttons{ display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-top:8px; }
 .qte-btn{ font-size:26px; padding:14px 4px; text-align:center; }
 
+.poi-grid{ display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; }
+.poi-card{
+  display:flex; flex-direction:column; align-items:center; gap:6px;
+  background:var(--sea); border:2px solid transparent; border-radius:14px;
+  padding:18px 8px; cursor:pointer; transition: border-color .15s ease, transform .12s ease;
+}
+.poi-card:active{ transform:scale(.96); }
+.poi-card:hover{ border-color:var(--gold-deep); }
+.poi-icon{ font-size:30px; }
+.poi-name{ font-size:12px; font-weight:600; text-align:center; color:var(--white); }
+
 .stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .stat-box{ background:var(--sea); border-radius:12px; padding:10px 12px; }
 .stat-box .s-name{ font-size:11px; color:#9fb3c8; }
