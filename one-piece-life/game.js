@@ -206,8 +206,40 @@ const DEATH_CAUSES = {
   old_age: "Tu t'es éteint·e paisiblement, entouré·e des tiens, à un âge avancé.",
   illness: "Une maladie a eu raison de toi après une vie bien remplie.",
   betrayal: "Trahi·e par un proche, tu n'as rien vu venir.",
-  drowning: "Emporté·e par les flots, ton pouvoir de fruit du démon ne t'a pas pardonné."
+  drowning: "Emporté·e par les flots, ton pouvoir de fruit du démon ne t'a pas pardonné.",
+  laughtale_fall: "Tu sombres corps et biens en forçant les portes de Laugh Tale, ton rêve inachevé."
 };
+
+/* ================= FINS & MUR DES ACHIEVEMENTS ================= */
+
+const ENDINGS_KEY = "opl_endings_v1";
+const ENDINGS_CATALOG = [
+  { id:"pirate_king", icon:"👑", label:"Roi des Pirates" },
+  { id:"fleet_admiral", icon:"⚓", label:"Amiral en Chef" },
+  { id:"battle", icon:"⚔️", label:"Tombé·e au combat" },
+  { id:"execution", icon:"🪓", label:"Exécuté·e par la Marine" },
+  { id:"old_age", icon:"🕯️", label:"Mort·e de vieillesse" },
+  { id:"illness", icon:"💊", label:"Emporté·e par la maladie" },
+  { id:"storm", icon:"🌊", label:"Perdu·e dans la tempête" },
+  { id:"seaking", icon:"🐋", label:"Englouti·e par un Roi des Mers" },
+  { id:"drowning", icon:"🌀", label:"Emporté·e par les flots" },
+  { id:"betrayal", icon:"🗡️", label:"Trahi·e par un proche" },
+  { id:"retraite_paisible", icon:"🌅", label:"Retraite paisible" },
+  { id:"laughtale_fall", icon:"🌑", label:"Sombré·e aux portes de Laugh Tale" }
+];
+
+function loadUnlockedEndings(){
+  try{
+    const raw = localStorage.getItem(ENDINGS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }catch(e){ return []; }
+}
+function unlockEnding(id){
+  const list = loadUnlockedEndings();
+  if(!list.includes(id)) list.push(id);
+  try{ localStorage.setItem(ENDINGS_KEY, JSON.stringify(list)); }catch(e){}
+  return list;
+}
 
 const SPECIAL_EVENTS = [
   {
@@ -1807,15 +1839,164 @@ function afterYearChoiceContinue(){
 function finishYearTail(){
   if(!state.alive){ finishAgeUp(); return; }
 
-  // laugh tale victory check for pirates
-  if(state.path==="pirate" && state.stage===5){
-    const winChance = state.flags.hasRoadPoneglyph ? 0.6 : 0.35;
-    if(powerScore() >= 240 && Math.random() < winChance){
-      winEnding("pirate");
-    }
+  // les épreuves de Laugh Tale, pour les pirates qui ont atteint l'île
+  const eligibleForTrials = state.path==="pirate" && state.stage===5 &&
+    (!state.flags.laughTaleNextAttemptAge || state.age>=state.flags.laughTaleNextAttemptAge);
+  if(eligibleForTrials){
+    startLaughTaleTrials(finishAgeUp);
+    return;
   }
 
   finishAgeUp();
+}
+
+/* ================= LES ÉPREUVES DE LAUGH TALE ================= */
+
+function startLaughTaleTrials(onDone){
+  addLog("Laugh Tale se dresse enfin devant toi. Pour percer son secret et devenir le nouveau Roi des Pirates, tu dois prouver ta valeur à travers trois épreuves.", "major");
+  save(); renderGame(true);
+  const results = { force:false, sagesse:false, volonte:false };
+  runForceTrial(results, ()=>{
+    if(!state.alive){ onDone(); return; }
+    runWisdomTrial(results, ()=>{
+      if(!state.alive){ onDone(); return; }
+      runWillTrial(results, ()=>{
+        if(!state.alive){ onDone(); return; }
+        resolveLaughTaleTrials(results, onDone);
+      });
+    });
+  });
+}
+
+function runForceTrial(results, next){
+  addLog("Épreuve de la Force : un Gardien spectral surgit pour te barrer la route.", "major");
+  const enemyPower = clamp(Math.round(powerScore()*0.3), 90, 140);
+  startBattle(enemyPower, "le Gardien de Laugh Tale", (outcome)=>{
+    results.force = outcome==="victory";
+    addLog(results.force
+      ? "Tu triomphes du Gardien : la première épreuve est franchie."
+      : "Le Gardien te repousse rudement, mais tu tiens encore debout.", results.force?"good":"bad");
+    save(); renderGame(true);
+    next();
+  });
+}
+
+let laughTaleTrialState = null;
+
+function runWisdomTrial(results, next){
+  addLog("Épreuve de la Sagesse : une inscription ancienne scintille sur la roche, à déchiffrer avant qu'elle ne s'efface.", "major");
+  const seq = [];
+  for(let i=0;i<5;i++) seq.push(pick(FRUIT_QTE_SYMBOLS));
+  laughTaleTrialState = { sequence:seq, input:[], results, onNext:next, timeoutId:null };
+  setMiniGameActive(true);
+  renderWisdomTrial();
+  laughTaleTrialState.timeoutId = setTimeout(()=> resolveWisdomTrial(), 4000);
+}
+
+function renderWisdomTrial(){
+  const t = laughTaleTrialState;
+  if(!t) return;
+  const seq = t.sequence;
+  const options = [...new Set(seq)];
+  while(options.length<4){
+    const extra = pick(FRUIT_QTE_SYMBOLS);
+    if(!options.includes(extra)) options.push(extra);
+  }
+  for(let i=options.length-1;i>0;i--){ const j=rand(0,i); [options[i],options[j]]=[options[j],options[i]]; }
+  openModal("Épreuve de la Sagesse", `
+    <p class="modal-intro">Reproduis l'inscription avant qu'elle ne s'efface.</p>
+    <div class="qte-sequence">${seq.map((s,i)=>`<span class="qte-symbol ${i<t.input.length?'done':''}">${s}</span>`).join("")}</div>
+    <div class="qte-buttons">${options.map(s=>`<button class="btn btn-chip qte-btn" data-symbol="${s}">${s}</button>`).join("")}</div>
+  `);
+  document.querySelectorAll(".qte-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=> onWisdomTrialTap(btn.dataset.symbol));
+  });
+}
+
+function onWisdomTrialTap(symbol){
+  const t = laughTaleTrialState;
+  if(!t) return;
+  const expected = t.sequence[t.input.length];
+  if(symbol!==expected){
+    clearTimeout(t.timeoutId);
+    resolveWisdomTrial();
+    return;
+  }
+  t.input.push(symbol);
+  if(t.input.length >= t.sequence.length){
+    clearTimeout(t.timeoutId);
+    resolveWisdomTrial();
+    return;
+  }
+  renderWisdomTrial();
+}
+
+function resolveWisdomTrial(){
+  const t = laughTaleTrialState;
+  if(!t) return;
+  const accuracy = t.input.length / t.sequence.length;
+  t.results.sagesse = accuracy >= 0.8;
+  laughTaleTrialState = null;
+  setMiniGameActive(false);
+  closeModal();
+  addLog(t.results.sagesse
+    ? "Tu déchiffres l'inscription juste à temps : la deuxième épreuve est franchie."
+    : "L'inscription s'efface avant que tu n'aies percé son secret.", t.results.sagesse?"good":"bad");
+  save(); renderGame(true);
+  t.onNext();
+}
+
+function runWillTrial(results, next){
+  addLog("Épreuve de la Volonté : un mirage de tout ce que tu as sacrifié pour en arriver là se dresse devant toi.", "major");
+  const choices = [
+    { label:"Puiser dans ta détermination et avancer", sub:"Refuse de céder au doute",
+      resolve(){
+        const chance = clamp(0.5 + (state.hakiConq?0.25:0) + state.chance/300 + (state.happiness-50)/300, 0.2, 0.9);
+        results.volonte = Math.random() < chance;
+      }
+    },
+    { label:"Céder un instant au doute", sub:"Plus sûr, mais moins déterminé·e",
+      resolve(){ results.volonte = Math.random() < 0.25; }
+    }
+  ];
+  pendingChoice = { choices, onResolve:(idx)=>{
+    choices[idx].resolve();
+    addLog(results.volonte
+      ? "Le mirage se dissipe : ta détermination l'a emporté. La troisième épreuve est franchie."
+      : "Le mirage t'engloutit un instant ; tu en ressors ébranlé·e mais vivant·e.", results.volonte?"good":"bad");
+    save(); renderGame(true);
+    next();
+  }};
+  const html = choices.map((c,i)=>`
+    <div class="action-row" data-choice="${i}">
+      <div><div class="a-label">${c.label}</div><div class="a-sub">${c.sub}</div></div>
+      <div class="a-val">→</div>
+    </div>`).join("");
+  openModal("Épreuve de la Volonté", html);
+  document.querySelectorAll("[data-choice]").forEach(el=>{
+    el.addEventListener("click", ()=> resolvePendingChoice(+el.dataset.choice));
+  });
+}
+
+function resolveLaughTaleTrials(results, onDone){
+  const successCount = [results.force, results.sagesse, results.volonte].filter(Boolean).length;
+  if(successCount>=2){
+    winEnding("pirate");
+    onDone();
+    return;
+  }
+  if(successCount===0 && Math.random()<0.25){
+    death("laughtale_fall");
+    onDone();
+    return;
+  }
+  const dmg = successCount===0 ? rand(30,50) : rand(10,25);
+  state.health = clamp(state.health-dmg, 0, 100);
+  addLog(successCount===0
+    ? `Laugh Tale rejette ta tentative. Tu t'en sors gravement blessé·e (-${dmg} PV), le rêve encore hors de portée.`
+    : `Tu n'as pas su convaincre Laugh Tale de tes preuves. Tu t'en sors blessé·e (-${dmg} PV), mais tu pourras retenter ta chance.`, "bad");
+  state.flags.laughTaleNextAttemptAge = state.age + 2;
+  onDone();
 }
 
 function triggerHazard(danger, onDone){
@@ -2474,8 +2655,9 @@ function finalizeLife(cause, victory){
     victory
   };
   pushHOF(hofEntry);
+  const unlocked = unlockEnding(cause);
   clearSave();
-  renderEndScreen(hofEntry, victory);
+  renderEndScreen(hofEntry, victory, cause, unlocked);
 }
 
 function pathLabel(p){
@@ -3347,7 +3529,7 @@ function renderGame(scrollLog){
 
 /* ================= END SCREEN ================= */
 
-function renderEndScreen(entry, victory){
+function renderEndScreen(entry, victory, causeId, unlockedList){
   document.getElementById("endTitle").textContent = victory ? "🏆 Légende accomplie" : "Fin de la légende";
   document.getElementById("endCause").textContent = entry.cause;
   const rows = [
@@ -3361,6 +3543,23 @@ function renderEndScreen(entry, victory){
 
   document.getElementById("endStats").innerHTML = rows.map(([k,v])=>
     `<div class="end-row"><span>${k}</span><b>${v}</b></div>`).join("");
+
+  const achEl = document.getElementById("endAchievements");
+  if(achEl){
+    const unlockedSet = new Set(unlockedList || loadUnlockedEndings());
+    achEl.innerHTML = `
+      <div class="ach-head">Fins découvertes : <b>${unlockedSet.size}</b> / ${ENDINGS_CATALOG.length}</div>
+      <div class="ach-grid">
+        ${ENDINGS_CATALOG.map(e=>{
+          const got = unlockedSet.has(e.id);
+          const isNew = e.id===causeId;
+          return `<div class="ach-badge ${got?'unlocked':'locked'} ${isNew?'just-unlocked':''}">
+            <span class="ach-icon">${got?e.icon:'❔'}</span>
+            <span class="ach-label">${got?e.label:'???'}</span>
+          </div>`;
+        }).join("")}
+      </div>`;
+  }
 
   showScreen("screen-end");
 }
