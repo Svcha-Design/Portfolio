@@ -207,7 +207,8 @@ const DEATH_CAUSES = {
   illness: "Une maladie a eu raison de toi après une vie bien remplie.",
   betrayal: "Trahi·e par un proche, tu n'as rien vu venir.",
   drowning: "Emporté·e par les flots, ton pouvoir de fruit du démon ne t'a pas pardonné.",
-  laughtale_fall: "Tu sombres corps et biens en forçant les portes de Laugh Tale, ton rêve inachevé."
+  laughtale_fall: "Tu sombres corps et biens en forçant les portes de Laugh Tale, ton rêve inachevé.",
+  erased_by_imu: "Tu as croisé la route d'Imu... et le monde a fait comme si tu n'avais jamais existé."
 };
 
 /* ================= FINS & MUR DES ACHIEVEMENTS ================= */
@@ -225,7 +226,9 @@ const ENDINGS_CATALOG = [
   { id:"drowning", icon:"🌀", label:"Emporté·e par les flots" },
   { id:"betrayal", icon:"🗡️", label:"Trahi·e par un proche" },
   { id:"retraite_paisible", icon:"🌅", label:"Retraite paisible" },
-  { id:"laughtale_fall", icon:"🌑", label:"Sombré·e aux portes de Laugh Tale" }
+  { id:"laughtale_fall", icon:"🌑", label:"Sombré·e aux portes de Laugh Tale" },
+  { id:"imu_slayer", icon:"🌒", label:"A affronté Imu et survécu" },
+  { id:"erased_by_imu", icon:"🕳️", label:"Effacé·e par Imu" }
 ];
 
 function loadUnlockedEndings(){
@@ -1067,6 +1070,95 @@ const SPECIAL_EVENTS = [
       },
       { label:"Décliner, tu préfères rester libre", sub:"",
         resolve(){ addLog("Tu préfères poursuivre seul·e ta route.", "neutral"); } }
+    ]
+  },
+
+  /* ---- Quête secrète : Imu ---- */
+  {
+    id:"marigeoise_1",
+    title:"Une rumeur insensée",
+    condition:()=> state.path==="pirate" && state.stage>=4 && state.age>=20 && powerScore()>=200 && !state.flags.marigeoiseStage && Math.random()<0.15,
+    text:"Dans les bas-fonds d'un port oublié, un vieil informateur te glisse à l'oreille une rumeur insensée : Mary Geoise, la Terre Sainte où siège le Gouvernement Mondial, ne serait pas gardée aussi hermétiquement qu'on le prétend...",
+    choices:[
+      { label:"Tenter de t'infiltrer à Mary Geoise", sub:"Un secret que peu ont approché — et dont peu sont revenus",
+        resolve(){
+          state.flags.marigeoiseStage = 1;
+          addLog("Tu prends la lourde décision de suivre cette rumeur jusqu'au bout du monde.", "major");
+        }
+      },
+      { label:"Ignorer cette folie", sub:"",
+        resolve(){ addLog("Tu préfères ne pas tenter le diable et laisses cette rumeur mourir d'elle-même.", "neutral"); } }
+    ]
+  },
+  {
+    id:"marigeoise_2",
+    title:"Le Conseil des Cinq",
+    condition:()=> (state.flags.marigeoiseStage||0)===1,
+    text:"Dissimulé·e dans les hauteurs de la Terre Sainte, tu observes le Conseil des Cinq Anciens en pleine délibération. Puis, dans l'ombre derrière eux, tu perçois une masse sombre, informe, que rien ni personne ne semble pouvoir nommer. Un frisson glacial te parcourt l'échine.",
+    choices:[
+      { label:"Continuer d'observer, hypnotisé·e", sub:"",
+        resolve(done){
+          addLog("Une sentinelle t'aperçoit soudain. L'alarme retentit dans toute la Terre Sainte !", "major");
+          startMarigeoiseEscape(done, false);
+          return true;
+        }
+      },
+      { label:"Fuir immédiatement, terrifié·e", sub:"Plus prudent",
+        resolve(done){
+          addLog("Tu ne demandes pas ton reste et amorces ta fuite sur-le-champ.", "neutral");
+          startMarigeoiseEscape(done, true);
+          return true;
+        }
+      }
+    ]
+  },
+  {
+    id:"marigeoise_3",
+    title:"L'ombre de la Terre Sainte",
+    condition:()=> (state.flags.marigeoiseStage||0)===2 && state.island==="Elbaf" && (state.flags.elbafStage||0)>=1,
+    text:"Alors que tu penses avoir semé tes poursuivants pour de bon, une présence glaçante t'attend sur les rivages d'Elbaf. La masse sombre que tu as aperçue à Mary Geoise... c'est Imu en personne, venu·e effacer ce que tu as vu.",
+    choices:[
+      { label:"Affronter Imu avec ton équipage", sub:"Le combat de ta vie",
+        resolve(done){
+          state.flags.marigeoiseStage = 3;
+          let enemyPower = clamp(Math.round(powerScore()*0.4), 110, 170);
+          if(state.crew.length) enemyPower -= Math.min(30, state.crew.length*8);
+          if(state.ally && !state.ally.defeated) enemyPower -= 15;
+          enemyPower = Math.max(90, enemyPower);
+          addLog(state.crew.length || (state.ally && !state.ally.defeated)
+            ? "Ton équipage et tes alliés se rangent à tes côtés face à l'impensable."
+            : "Seul·e face à l'impensable, tu te prépares au combat.", "major");
+          startBattle(enemyPower, "Imu", (outcome)=>{
+            if(outcome==="victory"){
+              const gain = rand(20000,50000);
+              state.beli += gain;
+              state.bounty += rand(50000,150000);
+              unlockEnding("imu_slayer");
+              addLog(`Tu repousses Imu dans les ténèbres dont il n'aurait jamais dû sortir. Le monde ne saura jamais ce qui s'est joué ici, mais toi, tu le sais : tu rafles ${fmt(gain)} Beli et une nouvelle légende naît. 🌒 Exploit débloqué : "A affronté Imu et survécu".`, "major");
+            } else {
+              addLog("Imu se joue de toi sans effort apparent. Tu t'en sors à peine vivant·e, l'esprit marqué à jamais.", "bad");
+              if(state.alive && Math.random()<0.3){
+                death("erased_by_imu");
+              }
+            }
+            done();
+          });
+          return true;
+        }
+      },
+      { label:"Tenter de fuir, la peur au ventre", sub:"Plus sûr, mais tu ne sauras jamais ce que tu aurais pu accomplir",
+        resolve(){
+          state.flags.marigeoiseStage = 3;
+          const fleeChance = clamp(0.3 + state.vitesse/200, 0.15, 0.7);
+          if(Math.random()<fleeChance){
+            addLog("Tu parviens à fuir, le cœur battant, laissant derrière toi une question qui te hantera : et si tu avais tenté ta chance ?", "neutral");
+          } else {
+            const dmg = rand(20,40);
+            state.health = clamp(state.health-dmg, 0, 100);
+            addLog(`Imu te rattrape sans effort et t'inflige une blessure cinglante avant de te laisser partir, comme par mépris (-${dmg} PV).`, "bad");
+          }
+        }
+      }
     ]
   }
 ];
@@ -1944,6 +2036,73 @@ function resolveWisdomTrial(){
     : "L'inscription s'efface avant que tu n'aies percé son secret.", t.results.sagesse?"good":"bad");
   save(); renderGame(true);
   t.onNext();
+}
+
+/* ================= ÉVASION DE MARY GEOISE ================= */
+
+const ESCAPE_QTE_SYMBOLS = ["⬆️","⬇️","⬅️","➡️"];
+let marigeoiseEscapeState = null;
+
+function startMarigeoiseEscape(onDone, easier){
+  const len = easier ? 5 : 6;
+  const seq = [];
+  for(let i=0;i<len;i++) seq.push(pick(ESCAPE_QTE_SYMBOLS));
+  marigeoiseEscapeState = { sequence:seq, input:[], onDone, timeoutId:null };
+  setMiniGameActive(true);
+  renderMarigeoiseEscape();
+  marigeoiseEscapeState.timeoutId = setTimeout(()=> resolveMarigeoiseEscape(), 4500);
+}
+
+function renderMarigeoiseEscape(){
+  const t = marigeoiseEscapeState;
+  if(!t) return;
+  const seq = t.sequence;
+  openModal("Fuite de la Terre Sainte", `
+    <p class="modal-intro">Mémorise le chemin de sortie et reproduis-le avant que les gardes ne te rattrapent !</p>
+    <div class="qte-sequence">${seq.map((s,i)=>`<span class="qte-symbol ${i<t.input.length?'done':''}">${s}</span>`).join("")}</div>
+    <div class="qte-buttons">${ESCAPE_QTE_SYMBOLS.map(s=>`<button class="btn btn-chip qte-btn" data-symbol="${s}">${s}</button>`).join("")}</div>
+  `);
+  document.querySelectorAll(".qte-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=> onMarigeoiseEscapeTap(btn.dataset.symbol));
+  });
+}
+
+function onMarigeoiseEscapeTap(symbol){
+  const t = marigeoiseEscapeState;
+  if(!t) return;
+  const expected = t.sequence[t.input.length];
+  if(symbol!==expected){
+    clearTimeout(t.timeoutId);
+    resolveMarigeoiseEscape();
+    return;
+  }
+  t.input.push(symbol);
+  if(t.input.length >= t.sequence.length){
+    clearTimeout(t.timeoutId);
+    resolveMarigeoiseEscape();
+    return;
+  }
+  renderMarigeoiseEscape();
+}
+
+function resolveMarigeoiseEscape(){
+  const t = marigeoiseEscapeState;
+  if(!t) return;
+  const accuracy = t.input.length / t.sequence.length;
+  const success = accuracy >= 0.7;
+  marigeoiseEscapeState = null;
+  setMiniGameActive(false);
+  closeModal();
+  state.flags.marigeoiseStage = 2;
+  if(success){
+    addLog("Tu sèmes tes poursuivants dans un dédale de couloirs et t'échappes de la Terre Sainte, le cœur battant. Ce que tu as vu là-bas continuera de te hanter.", "major");
+  } else {
+    const dmg = rand(15,30);
+    state.health = clamp(state.health-dmg, 0, 100);
+    addLog(`Rattrapé·e par une patrouille, tu te bats pour t'échapper et t'en sors blessé·e (-${dmg} PV), mais libre.`, "bad");
+  }
+  save(); renderGame(true);
+  t.onDone();
 }
 
 function runWillTrial(results, next){
