@@ -13,10 +13,12 @@
 const ROOM_PREFIX = "opl6-";
 const MAX_PLAYERS = 4;
 const ENCOUNTER_TIMEOUT_MS = 25000;
+const VOTE_TIMEOUT_MS = 25000;
 
 const mp = {
   active: false,
   isHost: false,
+  coopVoteMode: false,    // false = mode parallèle (par défaut) ; true = mode équipage (vote de groupe)
   peer: null,
   conns: {},              // hôte: peerId -> DataConnection ; invité: { host: DataConnection }
   selfId: null,
@@ -25,8 +27,12 @@ const mp = {
   year: 0,
   phase: "idle",          // idle | lobby | creating | round_wait_ready | round_resolving | round_encounter
   pendingEncounters: {},
-  encounterSeq: 0
+  encounterSeq: 0,
+  pendingVotes: {},
+  voteSeq: 0
 };
+
+let pendingVoteEvent = null; // l'événement (choices avec resolve()) en attente de vote, côté joueur concerné
 
 /* ================= TRANSPORT (isolé pour permettre un test avec mock) ================= */
 
@@ -86,12 +92,16 @@ function activePlayers(){
   return Object.values(mp.players).filter(p=>p.connected && p.alive!==false);
 }
 
+function rosterMsg(){
+  return { type:"roster", players: mp.players, phase: mp.phase, coopVoteMode: mp.coopVoteMode };
+}
+
 /* ================= LOGIQUE DE ROUND (hôte, pure — testable via mock transport) ================= */
 
 function hostHandle(fromId, msg){
   if(msg.type==="join"){
     mp.players[fromId] = mkEmptyPlayer(fromId, fromId===mp.selfId);
-    hostBroadcastAndApplyLocally({ type:"roster", players: mp.players, phase: mp.phase });
+    hostBroadcastAndApplyLocally(rosterMsg());
     return;
   }
   const p = mp.players[fromId];
@@ -108,17 +118,17 @@ function hostHandle(fromId, msg){
       if(active.length>0 && active.every(pl=>pl.born)){
         mp.phase = "round_wait_ready";
         mp.year = 1;
-        hostBroadcastAndApplyLocally({ type:"roster", players: mp.players, phase: mp.phase });
+        hostBroadcastAndApplyLocally(rosterMsg());
         hostBroadcastAndApplyLocally({ type:"round_open", year: mp.year });
       } else {
-        hostBroadcastAndApplyLocally({ type:"roster", players: mp.players, phase: mp.phase });
+        hostBroadcastAndApplyLocally(rosterMsg());
       }
     } else if(mp.phase==="round_resolving"){
       p.resolved = true;
-      hostBroadcastAndApplyLocally({ type:"roster", players: mp.players, phase: mp.phase });
+      hostBroadcastAndApplyLocally(rosterMsg());
       checkAllResolved();
     } else {
-      hostBroadcastAndApplyLocally({ type:"roster", players: mp.players, phase: mp.phase });
+      hostBroadcastAndApplyLocally(rosterMsg());
     }
     return;
   }
@@ -126,7 +136,7 @@ function hostHandle(fromId, msg){
   if(msg.type==="ready"){
     if(mp.phase!=="round_wait_ready" || msg.year!==mp.year) return;
     p.ready = true;
-    hostBroadcastAndApplyLocally({ type:"roster", players: mp.players, phase: mp.phase });
+    hostBroadcastAndApplyLocally(rosterMsg());
     checkAllReady();
     return;
   }
@@ -141,11 +151,54 @@ function hostHandle(fromId, msg){
 
   if(msg.type==="leave"){
     p.connected = false;
-    hostBroadcastAndApplyLocally({ type:"roster", players: mp.players, phase: mp.phase });
+    hostBroadcastAndApplyLocally(rosterMsg());
     if(mp.phase==="round_wait_ready") checkAllReady();
     else if(mp.phase==="round_resolving") checkAllResolved();
+    if(Object.keys(mp.pendingVotes).length) checkVotesForDisconnect();
     return;
   }
+
+  if(msg.type==="vote_request"){
+    const seq = mp.voteSeq++;
+    mp.pendingVotes[seq] = { forId: msg.forId, forName: msg.forName, choices: msg.choices, votes:{} };
+    hostBroadcastAndApplyLocally({ type:"vote_open", seq, forId: msg.forId, forName: msg.forName, title: msg.title, text: msg.text, choices: msg.choices });
+    setTimeout(()=>{ if(mp.pendingVotes[seq]) finalizeVote(seq); }, VOTE_TIMEOUT_MS);
+    return;
+  }
+
+  if(msg.type==="vote_cast"){
+    const v = mp.pendingVotes[msg.seq];
+    if(!v) return;
+    v.votes[fromId] = msg.choice;
+    const active = activePlayers();
+    if(active.length>0 && active.every(pl=>v.votes[pl.id]!==undefined)) finalizeVote(msg.seq);
+    return;
+  }
+}
+
+function checkVotesForDisconnect(){
+  const active = activePlayers();
+  Object.keys(mp.pendingVotes).forEach(seq=>{
+    const v = mp.pendingVotes[seq];
+    if(active.length>0 && active.every(pl=>v.votes[pl.id]!==undefined)) finalizeVote(+seq);
+  });
+}
+
+function finalizeVote(seq){
+  const v = mp.pendingVotes[seq];
+  if(!v) return;
+  delete mp.pendingVotes[seq];
+  const tally = {};
+  Object.values(v.votes).forEach(idx=>{ tally[idx] = (tally[idx]||0) + 1; });
+  let winner = 0, best = -1;
+  Object.keys(tally).forEach(k=>{
+    if(tally[k]>best){ best = tally[k]; winner = +k; }
+  });
+  const tiedCount = Object.values(tally).filter(c=>c===best).length;
+  if(tiedCount>1 && v.votes[v.forId]!==undefined){
+    winner = v.votes[v.forId];
+  }
+  hostBroadcastAndApplyLocally({ type:"vote_result", seq, forId:v.forId, forName:v.forName, choice: winner, tally });
 }
 
 function checkAllReady(){
@@ -257,7 +310,7 @@ function finalizeRound(){
   mp.year += 1;
   Object.values(mp.players).forEach(p=>{ p.ready = false; p.resolved = false; });
   mp.phase = "round_wait_ready";
-  hostBroadcastAndApplyLocally({ type:"roster", players: mp.players, phase: mp.phase });
+  hostBroadcastAndApplyLocally(rosterMsg());
   hostBroadcastAndApplyLocally({ type:"round_open", year: mp.year });
 }
 
@@ -283,6 +336,7 @@ function clientApply(msg){
     case "roster": {
       mp.players = msg.players;
       if(msg.phase) mp.phase = msg.phase;
+      if(msg.coopVoteMode!==undefined) mp.coopVoteMode = msg.coopVoteMode;
       renderLobbyIfOpen();
       renderPartyBar();
       updateAgeButtonLabel();
@@ -318,6 +372,22 @@ function clientApply(msg){
     case "encounter_result": {
       if(msg.forId && msg.forId!==mp.selfId) break;
       applyEncounterResult(msg);
+      break;
+    }
+    case "vote_open": {
+      showVoteModal(msg);
+      break;
+    }
+    case "vote_result": {
+      window.OPL.closeModal();
+      if(msg.forId===mp.selfId && pendingVoteEvent){
+        const ev = pendingVoteEvent;
+        pendingVoteEvent = null;
+        const isAsync = ev.choices[msg.choice].resolve(window.OPL.finishAgeUp);
+        if(!isAsync) window.OPL.finishAgeUp();
+      } else {
+        mpToast(`Vote conclu pour ${msg.forName || "un·e camarade"} de l'équipage.`);
+      }
       break;
     }
     case "room_full": {
@@ -417,6 +487,41 @@ function renderPartyBar(){
 
 /* ================= UI : rencontre sur une île commune ================= */
 
+/* ================= UI : vote d'équipage (mode Équipage) ================= */
+
+function startVoteForEvent(ev){
+  pendingVoteEvent = ev;
+  const msg = {
+    type:"vote_request", forId: mp.selfId,
+    forName: (mp.players[mp.selfId] && mp.players[mp.selfId].name) || "",
+    title: ev.title, text: ev.text,
+    choices: ev.choices.map(c=>({ label:c.label, sub:c.sub||"" }))
+  };
+  if(mp.isHost) hostHandle(mp.selfId, msg);
+  else sendToHost(msg);
+}
+
+function showVoteModal(msg){
+  const html = `
+    <p class="modal-intro"><b>${msg.forName || "Un·e camarade"}</b> doit décider : ${msg.text}</p>
+    ${msg.choices.map((c,i)=>`
+      <div class="action-row" data-vote="${i}">
+        <div><div class="a-label">${c.label}</div>${c.sub ? `<div class="a-sub">${c.sub}</div>` : ""}</div>
+        <div class="a-val">→</div>
+      </div>`).join("")}`;
+  window.OPL.openModal(`🗳️ Vote de l'équipage — ${msg.title}`, html);
+  document.querySelectorAll("[data-vote]").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      const idx = +el.dataset.vote;
+      window.OPL.closeModal();
+      mpToast("Vote envoyé, en attente du reste de l'équipage...");
+      const out = { type:"vote_cast", seq: msg.seq, choice: idx };
+      if(mp.isHost) hostHandle(mp.selfId, out);
+      else sendToHost(out);
+    });
+  });
+}
+
 function showEncounterModal(msg){
   const other = msg.other;
   const html = `
@@ -462,6 +567,7 @@ function renderLobbyModal(){
   const canStart = mp.isHost && ids.length>=1 && ids.length<=MAX_PLAYERS;
   const html = `
     <p class="modal-intro">Code de partie : <b class="mp-room-code">${mp.roomCode}</b>${mp.isHost ? ' <button id="mpCopyCode" class="btn btn-chip" type="button">Copier</button>' : ""}</p>
+    <p class="modal-intro" style="font-size:12px;">Mode : <b>${mp.coopVoteMode ? "Équipage (vote)" : "Parallèle"}</b> — ${MODE_DESCRIPTIONS[mp.coopVoteMode?"coop":"parallel"]}</p>
     <div class="mp-lobby-list">${rows || '<p class="modal-intro">En attente de joueurs...</p>'}</div>
     ${mp.isHost
       ? `<button id="mpStartGame" class="btn btn-primary btn-lg" ${canStart?"":"disabled"} style="margin-top:14px;">Lancer la partie (${ids.length}/${MAX_PLAYERS})</button>`
@@ -494,8 +600,19 @@ function hostStartGame(){
 
 /* ================= UI : écran d'entrée ================= */
 
+const MODE_DESCRIPTIONS = {
+  parallel: "Chacun vit sa vie de son côté, années synchronisées. Interactions si vous vous croisez sur la même île.",
+  coop: "Personnages individuels, mais les grandes décisions de quête et d'histoire se tranchent par vote de l'équipage."
+};
+
 function showEntryModal(){
   const html = `
+    <p class="modal-intro" style="margin-bottom:6px;">Mode de partie</p>
+    <div class="mp-mode-row">
+      <button id="mpModeParallel" class="btn btn-chip mp-mode-btn active" type="button" data-mode="parallel">Parallèle</button>
+      <button id="mpModeCoop" class="btn btn-chip mp-mode-btn" type="button" data-mode="coop">Équipage (vote)</button>
+    </div>
+    <p class="modal-intro" id="mpModeDesc" style="font-size:12px;margin:6px 0 16px;">${MODE_DESCRIPTIONS.parallel}</p>
     <button id="mpCreateBtn" class="btn btn-primary btn-lg">Créer une partie</button>
     <div class="mp-join-row">
       <input type="text" id="mpJoinCode" maxlength="5" placeholder="Code (5 caractères)">
@@ -503,7 +620,16 @@ function showEntryModal(){
     </div>
     <p class="modal-intro" style="margin-top:10px;font-size:12px;">Jusqu'à 4 joueurs, connexion directe entre vos appareils (pair-à-pair, sans serveur de jeu). Gardez tous l'onglet ouvert pendant la partie.</p>`;
   window.OPL.openModal("Multijoueur", html);
-  document.getElementById("mpCreateBtn").addEventListener("click", createRoom);
+  let selectedMode = "parallel";
+  document.querySelectorAll(".mp-mode-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      document.querySelectorAll(".mp-mode-btn").forEach(b=>b.classList.remove("active"));
+      btn.classList.add("active");
+      selectedMode = btn.dataset.mode;
+      document.getElementById("mpModeDesc").textContent = MODE_DESCRIPTIONS[selectedMode];
+    });
+  });
+  document.getElementById("mpCreateBtn").addEventListener("click", ()=> createRoom(selectedMode==="coop"));
   document.getElementById("mpJoinBtn").addEventListener("click", ()=>{
     const code = document.getElementById("mpJoinCode").value.trim().toUpperCase();
     if(code.length<3){ mpToast("Entre un code valide."); return; }
@@ -513,8 +639,9 @@ function showEntryModal(){
 
 /* ================= CONNEXION RÉSEAU (PeerJS) ================= */
 
-function createRoom(){
+function createRoom(coopMode){
   if(typeof Peer==="undefined"){ mpToast("Erreur : librairie réseau non chargée."); return; }
+  mp.coopVoteMode = !!coopMode;
   const code = genRoomCode();
   const peerId = ROOM_PREFIX + code;
   window.OPL.openModal("Multijoueur", '<p class="modal-intro">Connexion en cours...</p>');
@@ -595,6 +722,9 @@ function setupGuestConnection(conn){
 function deactivateMultiplayer(){
   mp.active = false;
   mp.phase = "idle";
+  mp.coopVoteMode = false;
+  mp.pendingVotes = {};
+  pendingVoteEvent = null;
   try{ if(mp.peer) mp.peer.destroy(); }catch(e){}
   mp.peer = null;
   mp.conns = {};
@@ -631,6 +761,14 @@ function wireHooks(){
     if(!mp.active) return;
     renderPartyBar();
     updateAgeButtonLabel();
+  };
+  window.OPL._onSpecialEvent = function(ev){
+    if(!mp.active || !mp.coopVoteMode) return false;
+    window.OPL.addLog(ev.text, "major");
+    window.OPL.save();
+    window.OPL.renderGame(true);
+    startVoteForEvent(ev);
+    return true;
   };
 }
 

@@ -1450,6 +1450,7 @@ function findChildSpecialEvent(){
 
 function triggerSpecialEvent(ev){
   state.flags[ev.id] = true;
+  if(window.OPL && window.OPL._onSpecialEvent && window.OPL._onSpecialEvent(ev)) return;
   addLog(ev.text, "major");
   pendingChoice = { choices: ev.choices, onResolve:(idx)=>{
     const isAsync = ev.choices[idx].resolve(finishAgeUp);
@@ -3836,7 +3837,8 @@ window.OPL = {
   _onAgeClick: null,
   _afterYearResolved: null,
   _afterBirth: null,
-  _afterRender: null
+  _afterRender: null,
+  _onSpecialEvent: null
 };
 
 })();
