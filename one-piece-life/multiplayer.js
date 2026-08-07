@@ -15,6 +15,7 @@ const MAX_PLAYERS = 4;
 const ENCOUNTER_TIMEOUT_MS = 25000;
 const VOTE_TIMEOUT_MS = 25000;
 const CHAT_LOG_MAX = 100;
+const REVIVE_TIMEOUT_MS = 30000;
 
 const mp = {
   active: false,
@@ -32,11 +33,14 @@ const mp = {
   pendingVotes: {},
   voteSeq: 0,
   chatLog: [],
-  chatUnread: 0
+  chatUnread: 0,
+  pendingRevivals: {},
+  reviveSeq: 0
 };
 
 let pendingVoteEvent = null; // l'événement (choices avec resolve()) en attente de vote, côté joueur concerné
 let chatModalOpen = false;
+let skipRevivalHook = false; // évite une boucle quand on rejoue death() après un refus de sauvetage
 
 /* ================= TRANSPORT (isolé pour permettre un test avec mock) ================= */
 
@@ -186,6 +190,32 @@ function hostHandle(fromId, msg){
     hostBroadcastAndApplyLocally({ type:"chat_message", entry });
     return;
   }
+
+  if(msg.type==="revive_request"){
+    const seq = mp.reviveSeq++;
+    mp.pendingRevivals[seq] = { forId: msg.forId, forName: msg.forName, cause: msg.cause, resolved:false };
+    hostBroadcastAndApplyLocally({ type:"revive_open", seq, forId: msg.forId, forName: msg.forName, island: msg.island, cause: msg.cause });
+    setTimeout(()=> finalizeRevival(seq, null), REVIVE_TIMEOUT_MS);
+    return;
+  }
+
+  if(msg.type==="revive_accept"){
+    finalizeRevival(msg.seq, fromId);
+    return;
+  }
+}
+
+function finalizeRevival(seq, byId){
+  const r = mp.pendingRevivals[seq];
+  if(!r || r.resolved) return;
+  r.resolved = true;
+  delete mp.pendingRevivals[seq];
+  const byPlayer = byId ? mp.players[byId] : null;
+  hostBroadcastAndApplyLocally({
+    type:"revive_result", seq, forId: r.forId, cause: r.cause,
+    accepted: !!byPlayer, byName: byPlayer ? byPlayer.name : null,
+    syncAge: byPlayer ? byPlayer.age : null
+  });
 }
 
 function checkVotesForDisconnect(){
@@ -413,6 +443,19 @@ function clientApply(msg){
       renderPartyBar();
       break;
     }
+    case "revive_open": {
+      if(msg.forId===mp.selfId) break; // on ne se demande pas à soi-même de se sauver
+      showRevivalModal(msg);
+      break;
+    }
+    case "revive_result": {
+      if(msg.forId===mp.selfId){
+        applyRevivalResult(msg);
+      } else {
+        window.OPL.closeModal();
+      }
+      break;
+    }
     case "room_full": {
       mpToast("Cette partie est déjà complète (4 joueurs max).");
       deactivateMultiplayer();
@@ -606,6 +649,58 @@ function sendChatMessage(text){
   const msg = { type:"chat_send", text };
   if(mp.isHost) hostHandle(mp.selfId, msg);
   else sendToHost(msg);
+}
+
+/* ================= UI : sauvetage par un membre de l'équipage ================= */
+
+function requestRevival(cause){
+  const s = window.OPL.getState();
+  const msg = { type:"revive_request", forId: mp.selfId, forName: s.name, island: s.island, cause };
+  if(mp.isHost) hostHandle(mp.selfId, msg);
+  else sendToHost(msg);
+  window.OPL.addLog("Ta vie ne tient plus qu'à un fil... quelqu'un de ton équipage pourrait encore te sauver.", "major");
+  window.OPL.save();
+  window.OPL.renderGame(true);
+}
+
+function showRevivalModal(msg){
+  const html = `
+    <p class="modal-intro"><b>${msg.forName || "Un·e camarade"}</b> vient de tomber à ${msg.island || "?"}...</p>
+    <div class="action-row" data-revive="yes">
+      <div><div class="a-label">Le/la ramener à la vie</div><div class="a-sub">Il/elle reprendra ton âge actuel</div></div>
+      <div class="a-val">→</div>
+    </div>
+    <div class="action-row" data-revive="no">
+      <div><div class="a-label">Laisser partir</div><div class="a-sub">Sa légende s'achève ici</div></div>
+      <div class="a-val">→</div>
+    </div>`;
+  window.OPL.openModal("Un membre de l'équipage est tombé", html);
+  document.querySelectorAll("[data-revive]").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      window.OPL.closeModal();
+      if(el.dataset.revive==="yes"){
+        const out = { type:"revive_accept", seq: msg.seq };
+        if(mp.isHost) hostHandle(mp.selfId, out);
+        else sendToHost(out);
+      }
+    });
+  });
+}
+
+function applyRevivalResult(msg){
+  const s = window.OPL.getState();
+  if(msg.accepted){
+    s.alive = true;
+    s.health = Math.max(s.health, 45);
+    if(msg.syncAge!=null && msg.syncAge>s.age) s.age = msg.syncAge;
+    window.OPL.addLog(`${msg.byName || "Un·e camarade"} refuse de te laisser mourir et te ramène in extremis. Tu as maintenant ${s.age} ans, comme le reste de l'équipage.`, "major");
+    window.OPL.save();
+    window.OPL.renderGame(true);
+  } else {
+    skipRevivalHook = true;
+    window.OPL.death(msg.cause);
+    skipRevivalHook = false;
+  }
 }
 
 function showEncounterModal(msg){
@@ -813,10 +908,12 @@ function deactivateMultiplayer(){
   mp.phase = "idle";
   mp.coopVoteMode = false;
   mp.pendingVotes = {};
+  mp.pendingRevivals = {};
   mp.chatLog = [];
   mp.chatUnread = 0;
   pendingVoteEvent = null;
   chatModalOpen = false;
+  skipRevivalHook = false;
   try{ if(mp.peer) mp.peer.destroy(); }catch(e){}
   mp.peer = null;
   mp.conns = {};
@@ -865,6 +962,14 @@ function wireHooks(){
   window.OPL._onModalClosed = function(){
     chatModalOpen = false;
   };
+  window.OPL._onFinalDeath = function(cause){
+    if(skipRevivalHook) return false;
+    if(!mp.active) return false;
+    const others = activePlayers().filter(p=>p.id!==mp.selfId);
+    if(others.length===0) return false;
+    requestRevival(cause);
+    return true;
+  };
 }
 
 /* ================= INIT ================= */
@@ -882,6 +987,6 @@ if(document.readyState==="loading"){
 }
 
 // Surface de test (mock du transport réseau) — voir scratchpad/test-mp-logic.js
-window.__OPL_MP_TEST__ = { mp, transport, hostHandle, clientApply, buildSnapshot, mkEmptyPlayer };
+window.__OPL_MP_TEST__ = { mp, transport, hostHandle, clientApply, buildSnapshot, mkEmptyPlayer, finalizeRevival };
 
 })();

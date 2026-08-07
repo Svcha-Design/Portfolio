@@ -228,7 +228,8 @@ const ENDINGS_CATALOG = [
   { id:"retraite_paisible", icon:"🌅", label:"Retraite paisible" },
   { id:"laughtale_fall", icon:"🌑", label:"Sombré·e aux portes de Laugh Tale" },
   { id:"imu_slayer", icon:"🌒", label:"A affronté Imu et survécu" },
-  { id:"erased_by_imu", icon:"🕳️", label:"Effacé·e par Imu" }
+  { id:"erased_by_imu", icon:"🕳️", label:"Effacé·e par Imu" },
+  { id:"vanves_treasure", icon:"🗺️", label:"A découvert le trésor de Vanves" }
 ];
 
 function loadUnlockedEndings(){
@@ -1157,6 +1158,38 @@ const SPECIAL_EVENTS = [
             state.health = clamp(state.health-dmg, 0, 100);
             addLog(`Imu te rattrape sans effort et t'inflige une blessure cinglante avant de te laisser partir, comme par mépris (-${dmg} PV).`, "bad");
           }
+        }
+      }
+    ]
+  },
+
+  /* ---- Île secrète : Vanves ---- */
+  {
+    id:"vanves_1",
+    title:"Une carte incomplète",
+    condition:()=> state.stage>=2 && state.force>=70 && state.intelligence>=70 && !state.flags.vanvesStage && Math.random()<0.15,
+    text:"Dans les affaires d'un vieux naufragé, tu découvres une carte incomplète, couverte d'annotations dans une langue oubliée. Seul·e quelqu'un d'aussi fort·e que perspicace pourrait espérer en percer le sens et retrouver l'île qu'elle décrit : Vanves.",
+    choices:[
+      { label:"Partir à la recherche de Vanves", sub:"Une légende que presque personne n'a jamais approchée",
+        resolve(){
+          state.flags.vanvesStage = 1;
+          addLog("Tu gardes précieusement la carte, déterminé·e à percer son mystère.", "major");
+        }
+      },
+      { label:"Ranger la carte, pure légende", sub:"",
+        resolve(){ addLog("Tu ranges la carte au fond d'un coffre, sceptique.", "neutral"); } }
+    ]
+  },
+  {
+    id:"vanves_2",
+    title:"Le chemin de Vanves",
+    condition:()=> (state.flags.vanvesStage||0)===1 && (!state.flags.vanvesNextAttemptAge || state.age>=state.flags.vanvesNextAttemptAge),
+    text:"En recoupant tes connaissances et les rares repères de la carte, tu crois enfin reconnaître les courants qui mènent à Vanves. Encore faut-il les suivre sans une erreur.",
+    choices:[
+      { label:"Suivre la route vers Vanves", sub:"Un mini-jeu de navigation t'attend",
+        resolve(done){
+          startVanvesQuest(done);
+          return true;
         }
       }
     ]
@@ -2108,6 +2141,77 @@ function resolveMarigeoiseEscape(){
   t.onDone();
 }
 
+/* ================= ÎLE SECRÈTE DE VANVES ================= */
+
+const VANVES_QTE_SYMBOLS = ["🧭","🌊","⭐","🗿"];
+let vanvesQuestState = null;
+
+function startVanvesQuest(onDone){
+  const seq = [];
+  for(let i=0;i<6;i++) seq.push(pick(VANVES_QTE_SYMBOLS));
+  vanvesQuestState = { sequence:seq, input:[], onDone, timeoutId:null };
+  setMiniGameActive(true);
+  renderVanvesQuest();
+  vanvesQuestState.timeoutId = setTimeout(()=> resolveVanvesQuest(), 5000);
+}
+
+function renderVanvesQuest(){
+  const t = vanvesQuestState;
+  if(!t) return;
+  const seq = t.sequence;
+  openModal("Le chemin de Vanves", `
+    <p class="modal-intro">Reproduis le relevé de courants avant que la brume ne se referme sur toi.</p>
+    <div class="qte-sequence">${seq.map((s,i)=>`<span class="qte-symbol ${i<t.input.length?'done':''}">${s}</span>`).join("")}</div>
+    <div class="qte-buttons">${VANVES_QTE_SYMBOLS.map(s=>`<button class="btn btn-chip qte-btn" data-symbol="${s}">${s}</button>`).join("")}</div>
+  `);
+  document.querySelectorAll(".qte-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=> onVanvesQuestTap(btn.dataset.symbol));
+  });
+}
+
+function onVanvesQuestTap(symbol){
+  const t = vanvesQuestState;
+  if(!t) return;
+  const expected = t.sequence[t.input.length];
+  if(symbol!==expected){
+    clearTimeout(t.timeoutId);
+    resolveVanvesQuest();
+    return;
+  }
+  t.input.push(symbol);
+  if(t.input.length >= t.sequence.length){
+    clearTimeout(t.timeoutId);
+    resolveVanvesQuest();
+    return;
+  }
+  renderVanvesQuest();
+}
+
+function resolveVanvesQuest(){
+  const t = vanvesQuestState;
+  if(!t) return;
+  const accuracy = t.input.length / t.sequence.length;
+  const success = accuracy >= 0.85;
+  vanvesQuestState = null;
+  setMiniGameActive(false);
+  closeModal();
+  if(success){
+    state.flags.vanvesStage = 2;
+    const gain = rand(80000,150000);
+    state.beli += gain;
+    applyMods({ force:5, vitesse:5, endurance:5, intelligence:5, charisme:5, chance:5 });
+    unlockEnding("vanves_treasure");
+    addLog(`Les courants s'écartent devant toi : Vanves émerge de la brume. Sur cette île oubliée de tous, tu découvres un trésor plus vaste que tout ce que tu aurais pu imaginer — plus gros, dit-on, que le One Piece lui-même. Tu rafles ${fmt(gain)} Beli et en ressors changé·e à jamais. 🗺️ Exploit débloqué : "A découvert le trésor de Vanves".`, "major");
+  } else {
+    state.flags.vanvesNextAttemptAge = state.age + 2;
+    const dmg = rand(10,20);
+    state.health = clamp(state.health-dmg, 0, 100);
+    addLog(`La brume se referme trop tôt : tu perds la route de Vanves et t'en sors épuisé·e (-${dmg} PV). Tu pourras retenter ta chance plus tard.`, "bad");
+  }
+  save(); renderGame(true);
+  t.onDone();
+}
+
 function runWillTrial(results, next){
   addLog("Épreuve de la Volonté : un mirage de tout ce que tu as sacrifié pour en arriver là se dresse devant toi.", "major");
   const choices = [
@@ -2794,6 +2898,15 @@ function death(cause){
     state.health = healthBack;
     state.beli = Math.max(0, state.beli-belyLoss);
     addLog(`${label} ...mais contre toute attente, tu t'en sors : une vie de rechange te ramène in extremis, ébranlé·e et bien plus pauvre (-${fmt(belyLoss)} Beli), avec ${healthBack} PV.`, "major");
+    save();
+    renderGame(true);
+    return;
+  }
+  if(window.OPL && window.OPL._onFinalDeath && window.OPL._onFinalDeath(cause)) return;
+  if(state.rival && !state.rival.defeated && Math.random()<0.25){
+    const healthBack = rand(30,50);
+    state.health = healthBack;
+    addLog(`${state.rival.name} "${state.rival.epithet}" surgit au tout dernier moment et te tire d'affaire — une dette étrange entre rivaux. Tu t'en sors avec ${healthBack} PV, votre rivalité plus complexe que jamais.`, "major");
     save();
     renderGame(true);
     return;
@@ -3872,7 +3985,8 @@ window.OPL = {
   _afterBirth: null,
   _afterRender: null,
   _onSpecialEvent: null,
-  _onModalClosed: null
+  _onModalClosed: null,
+  _onFinalDeath: null
 };
 
 })();
