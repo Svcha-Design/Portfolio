@@ -479,8 +479,12 @@ h1,h2,h3{ font-family:'Archivo Black', system-ui, sans-serif; margin:0; }
 .mp-chip-name{ display:block; font-size:12px; font-weight:700; color:var(--white); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .mp-chip-meta{ display:block; font-size:10px; color:#9fb3c8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-.mp-chat-btn{
+.mp-action-btns{
   flex:0 0 auto; position:sticky; right:0; margin-left:auto;
+  display:flex; gap:6px;
+}
+.mp-chat-btn, .mp-icon-btn{
+  flex:0 0 auto; position:relative;
   background:var(--gold-deep); color:var(--ink); border:none; border-radius:10px;
   padding:6px 12px; font-size:16px; cursor:pointer;
 }

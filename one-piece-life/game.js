@@ -229,7 +229,10 @@ const ENDINGS_CATALOG = [
   { id:"laughtale_fall", icon:"🌑", label:"Sombré·e aux portes de Laugh Tale" },
   { id:"imu_slayer", icon:"🌒", label:"A affronté Imu et survécu" },
   { id:"erased_by_imu", icon:"🕳️", label:"Effacé·e par Imu" },
-  { id:"vanves_treasure", icon:"🗺️", label:"A découvert le trésor de Vanves" }
+  { id:"vanves_treasure", icon:"🗺️", label:"A découvert le trésor de Vanves" },
+  { id:"poneglyph_master", icon:"📜", label:"A déchiffré les cinq Poneglyphes" },
+  { id:"island_liberator", icon:"🕊️", label:"A libéré son île natale" },
+  { id:"island_ruler", icon:"🏰", label:"A défendu son héritage familial" }
 ];
 
 function loadUnlockedEndings(){
@@ -1193,6 +1196,59 @@ const SPECIAL_EVENTS = [
         }
       }
     ]
+  },
+  /* ---- Héritage de l'île natale ---- */
+  {
+    id:"island_legacy",
+    title:"L'héritage de ton île natale",
+    condition:()=> state.pathChosen && state.age>=16 && !state.flags.islandLegacyResolved &&
+      (state.flags.islandOrigin==="ruling" || state.flags.islandOrigin==="occupied"),
+    text:"Des nouvelles de ton île natale te parviennent, et elles ne peuvent être ignorées.",
+    choices:[
+      { label:"Agir maintenant", sub:"L'avenir de ta famille et de ton île se joue là",
+        resolve(done){
+          const wasOccupied = state.flags.islandOrigin==="occupied";
+          const occName = state.flags.occupierFamily || "la famille rivale";
+          if(wasOccupied){
+            addLog(`Tu rentres à ${state.birthplace}, déterminé·e à libérer ton île du joug de ${occName}.`, "major");
+          } else {
+            addLog(`Tu rentres à ${state.birthplace} pour défendre le contrôle de ta famille contre un rival ambitieux.`, "major");
+          }
+          const enemyPower = clamp(Math.round(powerScore()*0.35), 80, 150);
+          startBattle(enemyPower, wasOccupied ? occName : "Un rival ambitieux", (outcome)=>{
+            if(outcome==="victory"){
+              state.flags.islandLegacyResolved = true;
+              state.flags.islandOrigin = "ruling";
+              const gain = rand(5000,15000);
+              state.beli += gain;
+              applyMods({ charisme:5, force:3 });
+              if(state.path==="pirate") state.repPirate += 8; else if(state.path==="marine") state.repMarine += 8;
+              unlockEnding(wasOccupied ? "island_liberator" : "island_ruler");
+              addLog(wasOccupied
+                ? `Tu chasses ${occName} de ${state.birthplace} : l'île respire enfin librement, et ta famille retrouve sa place ! 🕊️ Exploit débloqué : "A libéré son île natale".`
+                : `Tu repousses le rival et assois définitivement l'autorité de ta famille sur ${state.birthplace}. 🏰 Exploit débloqué : "A défendu son héritage familial".`, "major");
+            } else {
+              state.flags.island_legacy = false; // permet de retenter sa chance plus tard
+              if(!wasOccupied){
+                state.flags.islandOrigin = "occupied";
+                state.flags.occupierFamily = "une nouvelle faction locale";
+                addLog(`Ta famille perd le contrôle de ${state.birthplace}, désormais sous la coupe d'une nouvelle faction. Rien n'est perdu : tu pourrais un jour reprendre l'île.`, "bad");
+              } else {
+                addLog(`Tu es repoussé·e, blessé·e. ${occName} garde le contrôle de ${state.birthplace}, pour l'instant.`, "bad");
+              }
+            }
+            done();
+          });
+          return true;
+        }
+      },
+      { label:"Laisser cela derrière toi", sub:"Ta vie est ailleurs désormais",
+        resolve(){
+          state.flags.islandLegacyResolved = true;
+          addLog(`Tu choisis de tourner le dos à ${state.birthplace} et à son destin. Ta route est ailleurs.`, "neutral");
+        }
+      }
+    ]
   }
 ];
 
@@ -1565,6 +1621,14 @@ function rand(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
 function pick(arr){ return arr[rand(0,arr.length-1)]; }
 function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
 function fmt(n){ return Math.round(n).toLocaleString("fr-FR"); }
+function sampleDistinct(arr, n){
+  const pool = arr.slice();
+  const out = [];
+  while(out.length<n && pool.length){
+    out.push(pool.splice(rand(0,pool.length-1),1)[0]);
+  }
+  return out;
+}
 
 function applyMods(mods){
   if(!mods) return;
@@ -1679,6 +1743,20 @@ function birthCharacter(){
   if(fam.repPirate) state.repPirate += fam.repPirate;
 
   addLog(`Tu nais à ${state.birthplace}, au sein d'une ${fam.label.toLowerCase()}.`, "major");
+
+  const originRoll = Math.random();
+  if(originRoll<0.12){
+    state.flags.islandOrigin = "ruling";
+    addLog(`Ta famille n'est pas comme les autres : elle dirige ${state.birthplace} depuis des générations.`, "major");
+  } else if(originRoll<0.24){
+    state.flags.islandOrigin = "occupied";
+    state.flags.occupierFamily = "la famille " + pick(NAME_LAST);
+    addLog(`${state.birthplace} vit sous la coupe de ${state.flags.occupierFamily}, qui a pris le contrôle de l'île bien avant ta naissance.`, "major");
+  }
+
+  state.flags.poneglyphIslands = sampleDistinct(ISLANDS[2].concat(ISLANDS[4]), 5);
+  state.flags.poneglyphsFound = [];
+
   save();
   showScreen("screen-game");
   renderGame();
@@ -2212,6 +2290,80 @@ function resolveVanvesQuest(){
   t.onDone();
 }
 
+/* ================= CHASSE AUX PONEGLYPHES ================= */
+
+const PONEGLYPH_QTE_SYMBOLS = ["📜","🗿","🌀","⚡"];
+let poneglyphState = null;
+
+function startPoneglyphDecipher(){
+  addLog("Au cœur des ruines, une paroi entière est gravée d'inscriptions anciennes : un Poneglyphe !", "major");
+  const seq = [];
+  for(let i=0;i<5;i++) seq.push(pick(PONEGLYPH_QTE_SYMBOLS));
+  poneglyphState = { sequence: seq, input: [], timeoutId: null };
+  setMiniGameActive(true);
+  renderPoneglyphDecipher();
+  poneglyphState.timeoutId = setTimeout(()=> resolvePoneglyphDecipher(), 5000);
+}
+
+function renderPoneglyphDecipher(){
+  const t = poneglyphState;
+  if(!t) return;
+  const seq = t.sequence;
+  openModal("Déchiffrer le Poneglyphe", `
+    <p class="modal-intro">Reproduis les symboles gravés avant de perdre le fil de l'inscription.</p>
+    <div class="qte-sequence">${seq.map((s,i)=>`<span class="qte-symbol ${i<t.input.length?'done':''}">${s}</span>`).join("")}</div>
+    <div class="qte-buttons">${PONEGLYPH_QTE_SYMBOLS.map(s=>`<button class="btn btn-chip qte-btn" data-symbol="${s}">${s}</button>`).join("")}</div>
+  `);
+  document.querySelectorAll(".qte-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=> onPoneglyphTap(btn.dataset.symbol));
+  });
+}
+
+function onPoneglyphTap(symbol){
+  const t = poneglyphState;
+  if(!t) return;
+  const expected = t.sequence[t.input.length];
+  if(symbol!==expected){
+    clearTimeout(t.timeoutId);
+    resolvePoneglyphDecipher();
+    return;
+  }
+  t.input.push(symbol);
+  if(t.input.length >= t.sequence.length){
+    clearTimeout(t.timeoutId);
+    resolvePoneglyphDecipher();
+    return;
+  }
+  renderPoneglyphDecipher();
+}
+
+function resolvePoneglyphDecipher(){
+  const t = poneglyphState;
+  if(!t) return;
+  const accuracy = t.input.length / t.sequence.length;
+  const success = accuracy >= 0.8;
+  poneglyphState = null;
+  setMiniGameActive(false);
+  closeModal();
+  if(success){
+    state.flags.poneglyphsFound = state.flags.poneglyphsFound || [];
+    state.flags.poneglyphsFound.push(state.island);
+    const gain = rand(3000,8000);
+    state.beli += gain;
+    applyMods({ intelligence: rand(3,6) });
+    addLog(`Tu perces le sens du Poneglyphe de ${state.island} ! ${fmt(gain)} Beli de récompense pour cette découverte historique (${state.flags.poneglyphsFound.length}/5 trouvés).`, "major");
+    if(state.flags.poneglyphsFound.length>=5 && !state.flags.hasRoadPoneglyph){
+      state.flags.hasRoadPoneglyph = true;
+      unlockEnding("poneglyph_master");
+      addLog(`Les cinq Poneglyphes forment ensemble une carte complète : la voie vers Laugh Tale t'est grande ouverte ! 📜 Exploit débloqué : "A déchiffré les cinq Poneglyphes".`, "major");
+    }
+  } else {
+    state.health = clamp(state.health - rand(5,12), 0, 100);
+    addLog("Les symboles t'échappent : l'inscription reste indéchiffrable pour l'instant. Tu pourras retenter ta chance en revenant ici.", "bad");
+  }
+  save(); renderGame(true);
+}
+
 function runWillTrial(results, next){
   addLog("Épreuve de la Volonté : un mirage de tout ce que tu as sacrifié pour en arriver là se dresse devant toi.", "major");
   const choices = [
@@ -2636,6 +2788,14 @@ function startWarSequence(config){
       }
       nextRound();
     });
+  }
+
+  if(window.OPL && window.OPL._onWarStart){
+    const handled = window.OPL._onWarStart(config, (bonus)=>{
+      if(bonus) config.basePower = Math.max(60, config.basePower - bonus);
+      nextRound();
+    });
+    if(handled) return;
   }
   nextRound();
 }
@@ -3154,6 +3314,10 @@ function explorePort(){
 }
 
 function exploreRuins(){
+  if((state.flags.poneglyphIslands||[]).includes(state.island) && !(state.flags.poneglyphsFound||[]).includes(state.island)){
+    startPoneglyphDecipher();
+    return;
+  }
   if(!state.devilFruit && !state.islandVault && Math.random()<0.45){
     addLog("Au détour de ruines oubliées, tu perçois une présence étrange...", "neutral");
     state.islandVault = { island: state.island, stageId: state.stage, rumorHeard:false, chests: buildVaultChests(), resolved:false };
@@ -3775,6 +3939,10 @@ function openStatus(){
     <div class="action-row" style="cursor:default;">
       <div><div class="a-label">Fragments de Poneglyphe</div><div class="a-sub">${state.flags.poneglyphFragments}/3 — assez d'intelligence sur Grand Line peut t'en révéler d'autres</div></div>
     </div>` : ""}
+    ${!state.flags.hasRoadPoneglyph && (state.flags.poneglyphsFound||[]).length>0 ? `
+    <div class="action-row" style="cursor:default;">
+      <div><div class="a-label">Poneglyphes déchiffrés</div><div class="a-sub">${state.flags.poneglyphsFound.length}/5 — explore les ruines des îles pour en trouver d'autres</div></div>
+    </div>` : ""}
     ${state.flags.hasRoadPoneglyph ? `
     <div class="action-row" style="cursor:default;">
       <div><div class="a-label">Poneglyphe Route</div><div class="a-sub">Complet — la voie vers Laugh Tale t'est ouverte</div></div>
@@ -3950,6 +4118,38 @@ function wire(){
 
 document.addEventListener("DOMContentLoaded", wire);
 
+/* ================= GOUVERNANCE D'ÎLE (support multijoueur) ================= */
+
+function grantIslandRewardPerk(){
+  const options = ["stats"];
+  if(CREW_LABELS[state.path] && state.crew.length<crewCapacity()) options.push("recruit");
+  if(state.path==="pirate" && !state.devilFruit) options.push("fruit");
+  const kind = pick(options);
+  if(kind==="fruit"){
+    const fruit = pick(DEVIL_FRUITS);
+    state.devilFruit = fruit;
+    applyMods(fruit.mods);
+    return { kind, text:`Un fruit du démon retrouvé dans les affaires de l'île : le ${fruit.name} (${fruit.type}) ! ${fruit.desc}` };
+  }
+  if(kind==="recruit"){
+    const rolePool = CREW_ROLES_BY_PATH[state.path] || CREW_ROLES;
+    const roleData = pick(rolePool);
+    const member = { name: pick(CREW_FIRST), role: roleData.role, power: rand(15,35), loyalty: rand(70,95) };
+    state.crew.push(member);
+    const labels = CREW_LABELS[state.path] || CREW_LABELS.pirate;
+    return { kind, text:`${member.name} rejoint ${labels.poss.toLowerCase()} ${labels.group} en tant que ${member.role.toLowerCase()}, impressionné·e par ta prise de contrôle.` };
+  }
+  const statKeys = ["force","vitesse","endurance","intelligence","charisme"];
+  const gains = {};
+  for(let i=0;i<2;i++){
+    const k = pick(statKeys);
+    gains[k] = (gains[k]||0) + rand(3,6);
+  }
+  applyMods(gains);
+  const gainText = Object.entries(gains).map(([k,v])=>`+${v} ${STAT_LABELS[k]}`).join(", ");
+  return { kind:"stats", text:`Gouverner cette île t'endurcit : ${gainText}.` };
+}
+
 /* ================= EXPORT SURFACE (multijoueur) =================
    game.js tourne dans une IIFE fermée ; ce petit export explicite est
    le seul point d'accès pour multiplayer.js, chargé après ce script. */
@@ -3979,6 +4179,7 @@ window.OPL = {
   STAGES,
   ISLAND_ICONS,
   pathLabel,
+  grantIslandRewardPerk,
   // hook slots multiplayer.js peut renseigner ; no-op tant qu'ils ne le sont pas
   _onAgeClick: null,
   _afterYearResolved: null,
@@ -3986,7 +4187,8 @@ window.OPL = {
   _afterRender: null,
   _onSpecialEvent: null,
   _onModalClosed: null,
-  _onFinalDeath: null
+  _onFinalDeath: null,
+  _onWarStart: null
 };
 
 })();

@@ -16,6 +16,7 @@ const ENCOUNTER_TIMEOUT_MS = 25000;
 const VOTE_TIMEOUT_MS = 25000;
 const CHAT_LOG_MAX = 100;
 const REVIVE_TIMEOUT_MS = 30000;
+const WAR_CALL_TIMEOUT_MS = 15000;
 
 const mp = {
   active: false,
@@ -35,11 +36,16 @@ const mp = {
   chatLog: [],
   chatUnread: 0,
   pendingRevivals: {},
-  reviveSeq: 0
+  reviveSeq: 0,
+  pendingWarCalls: {},
+  warCallSeq: 0,
+  governors: {}           // île -> { id, name, path, power } du/de la joueur·se qui la gouverne
 };
 
 let pendingVoteEvent = null; // l'événement (choices avec resolve()) en attente de vote, côté joueur concerné
+let pendingWarCallContinuation = null; // callback à reprendre une fois l'appel de renfort résolu
 let chatModalOpen = false;
+let govModalOpen = false;
 let skipRevivalHook = false; // évite une boucle quand on rejoue death() après un refus de sauvetage
 
 /* ================= TRANSPORT (isolé pour permettre un test avec mock) ================= */
@@ -203,6 +209,95 @@ function hostHandle(fromId, msg){
     finalizeRevival(msg.seq, fromId);
     return;
   }
+
+  if(msg.type==="naval_challenge_request"){
+    const target = mp.players[msg.targetId];
+    if(!target || !target.connected || target.alive===false){
+      hostSendTo(fromId, { type:"naval_challenge_invalid" });
+      return;
+    }
+    hostSendTo(fromId, { type:"naval_challenge_ready", targetId: msg.targetId, targetName: target.name, targetPower: target.power });
+    return;
+  }
+
+  if(msg.type==="naval_result"){
+    const target = mp.players[msg.targetId];
+    if(target){
+      hostSendTo(msg.targetId, { type:"naval_result_notice", challengerName: p.name, outcome: msg.outcome });
+    }
+    return;
+  }
+
+  if(msg.type==="war_call_request"){
+    const seq = mp.warCallSeq++;
+    const eligible = activePlayers().filter(pl=>pl.id!==fromId && pl.path===msg.path);
+    mp.pendingWarCalls[seq] = { forId: fromId, forName: msg.forName, eligibleIds: eligible.map(pl=>pl.id), accepted: [], resolved:false };
+    if(eligible.length===0){
+      finalizeWarCall(seq);
+    } else {
+      eligible.forEach(pl=> hostSendTo(pl.id, { type:"war_call_open", forId: fromId, forName: msg.forName, warLabel: msg.warLabel, seq }));
+      setTimeout(()=> finalizeWarCall(seq), WAR_CALL_TIMEOUT_MS);
+    }
+    return;
+  }
+
+  if(msg.type==="war_call_accept"){
+    const w = mp.pendingWarCalls[msg.seq];
+    if(!w || w.resolved) return;
+    if(!w.accepted.includes(fromId)) w.accepted.push(fromId);
+    if(w.accepted.length>=w.eligibleIds.length) finalizeWarCall(msg.seq);
+    return;
+  }
+
+  if(msg.type==="gov_challenge"){
+    resolveGovChallenge(fromId, msg.island);
+    return;
+  }
+}
+
+function finalizeWarCall(seq){
+  const w = mp.pendingWarCalls[seq];
+  if(!w || w.resolved) return;
+  w.resolved = true;
+  delete mp.pendingWarCalls[seq];
+  const bonus = Math.min(30, w.accepted.length*10);
+  const helperNames = w.accepted.map(id=> (mp.players[id]&&mp.players[id].name) || "un·e allié·e");
+  hostSendTo(w.forId, { type:"war_call_result", bonus, helperNames });
+  w.accepted.forEach(id=>{
+    const reward = 500 + Math.floor(Math.random()*1000);
+    hostSendTo(id, { type:"war_call_reward", amount: reward, forName: w.forName });
+  });
+}
+
+function resolveGovChallenge(fromId, island){
+  const p = mp.players[fromId];
+  if(!p) return;
+  const current = mp.governors[island];
+  if(current && current.id===fromId){
+    hostSendTo(fromId, { type:"gov_result", island, outcome:"already", governorName: p.name });
+    return;
+  }
+  const challengerPower = Math.max(1, p.power);
+  let winChance;
+  if(!current){
+    winChance = Math.min(0.85, Math.max(0.4, challengerPower/(challengerPower+140)));
+  } else {
+    const defenderPower = Math.max(1, current.power||50);
+    winChance = Math.min(0.75, Math.max(0.15, challengerPower/(challengerPower+defenderPower)));
+  }
+  const win = Math.random() < winChance;
+  if(win){
+    const previousGovernorId = current ? current.id : null;
+    const previousGovernorName = current ? current.name : null;
+    mp.governors[island] = { id: fromId, name: p.name, path: p.path, power: challengerPower };
+    hostSendTo(fromId, { type:"gov_result", island, outcome:"won", previousGovernorName });
+    if(previousGovernorId && previousGovernorId!==fromId){
+      hostSendTo(previousGovernorId, { type:"gov_lost", island, byName: p.name });
+    }
+  } else {
+    hostSendTo(fromId, { type:"gov_result", island, outcome:"lost", governorName: current ? current.name : null });
+  }
+  hostBroadcastAndApplyLocally({ type:"gov_state", governors: mp.governors });
 }
 
 function finalizeRevival(seq, byId){
@@ -456,6 +551,49 @@ function clientApply(msg){
       }
       break;
     }
+    case "naval_challenge_ready": {
+      startNavalChallengeBattle(msg);
+      break;
+    }
+    case "naval_challenge_invalid": {
+      mpToast("Ce joueur n'est plus disponible pour un défi naval.");
+      break;
+    }
+    case "naval_result_notice": {
+      applyNavalResultNotice(msg);
+      break;
+    }
+    case "war_call_open": {
+      if(msg.forId===mp.selfId) break;
+      showWarCallModal(msg);
+      break;
+    }
+    case "war_call_result": {
+      if(msg.forId!==mp.selfId) break;
+      applyWarCallResult(msg);
+      break;
+    }
+    case "war_call_reward": {
+      applyWarCallReward(msg);
+      break;
+    }
+    case "gov_state": {
+      mp.governors = msg.governors || {};
+      renderGovernanceIfOpen();
+      break;
+    }
+    case "gov_result": {
+      if(msg.forId!==mp.selfId) break;
+      applyGovResult(msg);
+      break;
+    }
+    case "gov_lost": {
+      if(msg.forId!==mp.selfId) break;
+      window.OPL.addLog(`${msg.byName} t'a déchu·e du contrôle de ${msg.island}.`, "bad");
+      window.OPL.save();
+      window.OPL.renderGame(true);
+      break;
+    }
     case "room_full": {
       mpToast("Cette partie est déjà complète (4 joueurs max).");
       deactivateMultiplayer();
@@ -550,7 +688,15 @@ function renderPartyBar(){
     </div>`;
   }).join("");
   const unreadBadge = mp.chatUnread>0 ? `<span class="mp-chat-badge">${mp.chatUnread>9?"9+":mp.chatUnread}</span>` : "";
-  bar.innerHTML = chips + `<button id="mpChatBtn" class="mp-chat-btn" type="button">💬${unreadBadge}</button>`;
+  bar.innerHTML = chips + `<div class="mp-action-btns">
+    <button id="mpNavalBtn" class="mp-icon-btn" type="button">⚓</button>
+    <button id="mpGovBtn" class="mp-icon-btn" type="button">🏝️</button>
+    <button id="mpChatBtn" class="mp-chat-btn" type="button">💬${unreadBadge}</button>
+  </div>`;
+  const navalBtn = document.getElementById("mpNavalBtn");
+  if(navalBtn) navalBtn.addEventListener("click", openNavalChallengeModal);
+  const govBtn = document.getElementById("mpGovBtn");
+  if(govBtn) govBtn.addEventListener("click", openGovernanceModal);
   const chatBtn = document.getElementById("mpChatBtn");
   if(chatBtn) chatBtn.addEventListener("click", openChatModal);
 }
@@ -700,6 +846,177 @@ function applyRevivalResult(msg){
     skipRevivalHook = true;
     window.OPL.death(msg.cause);
     skipRevivalHook = false;
+  }
+}
+
+/* ================= UI : bataille navale à la demande ================= */
+
+function openNavalChallengeModal(){
+  const others = Object.values(mp.players).filter(p=>p.id!==mp.selfId && p.connected && p.alive!==false && p.born);
+  const html = others.length
+    ? others.map(p=>`
+      <div class="action-row" data-naval-target="${p.id}">
+        <div><div class="a-label">${p.name}</div><div class="a-sub">${p.island||"?"} · Puissance ${p.power}</div></div>
+        <div class="a-val">⚔️</div>
+      </div>`).join("")
+    : `<p class="modal-intro">Aucun autre joueur disponible à défier pour l'instant.</p>`;
+  window.OPL.openModal("⚓ Défier en bataille navale", html);
+  document.querySelectorAll("[data-naval-target]").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      const targetId = el.dataset.navalTarget;
+      window.OPL.closeModal();
+      mpToast("Défi envoyé, préparation du combat...");
+      const out = { type:"naval_challenge_request", targetId };
+      if(mp.isHost) hostHandle(mp.selfId, out);
+      else sendToHost(out);
+    });
+  });
+}
+
+function startNavalChallengeBattle(msg){
+  const s = window.OPL.getState();
+  const enemyPower = Math.max(35, Math.min(120, Math.round(msg.targetPower*0.35)));
+  window.OPL.addLog(`Tu manœuvres pour intercepter le navire de ${msg.targetName} en pleine mer !`, "major");
+  window.OPL.save();
+  window.OPL.renderGame(true);
+  window.OPL.startBattle(enemyPower, `Le navire de ${msg.targetName}`, (outcome)=>{
+    const win = outcome==="victory";
+    if(win){
+      const gain = window.OPL.rand(2000,6000);
+      s.beli += gain;
+      if(s.path==="pirate") s.bounty += window.OPL.rand(3000,8000);
+      window.OPL.addLog(`Tu remportes l'abordage contre le navire de ${msg.targetName} ! +${window.OPL.fmt(gain)} Beli de butin.`, "good");
+    } else {
+      window.OPL.addLog(`L'abordage tourne court : le navire de ${msg.targetName} t'échappe.`, "bad");
+    }
+    window.OPL.save();
+    window.OPL.renderGame(true);
+    const out = { type:"naval_result", targetId: msg.targetId, outcome: win?"win":"lose" };
+    if(mp.isHost) hostHandle(mp.selfId, out);
+    else sendToHost(out);
+  });
+}
+
+function applyNavalResultNotice(msg){
+  const s = window.OPL.getState();
+  if(msg.outcome==="win"){
+    const loss = window.OPL.rand(800,2500);
+    s.beli = Math.max(0, s.beli - loss);
+    const dmg = window.OPL.rand(5,15);
+    s.health = Math.max(0, Math.min(100, s.health - dmg));
+    window.OPL.addLog(`${msg.challengerName} a pris ton navire pour cible en pleine mer et l'a emporté : tu perds ${window.OPL.fmt(loss)} Beli et ${dmg} PV dans l'abordage.`, "bad");
+    if(s.alive && s.health<=0) window.OPL.death("battle");
+    window.OPL.save();
+    window.OPL.renderGame(true);
+  } else {
+    mpToast(`${msg.challengerName} a tenté de t'aborder en mer, sans succès.`);
+  }
+}
+
+/* ================= UI : appel de renfort en guerre ================= */
+
+function showWarCallModal(msg){
+  const html = `
+    <p class="modal-intro"><b>${msg.forName}</b> est en pleine bataille (${msg.warLabel}) et a besoin de renfort !</p>
+    <div class="action-row" data-warcall="yes">
+      <div><div class="a-label">Envoyer du renfort</div><div class="a-sub">Réduit la difficulté de son combat</div></div>
+      <div class="a-val">→</div>
+    </div>
+    <div class="action-row" data-warcall="no">
+      <div><div class="a-label">Rester à l'écart</div><div class="a-sub"></div></div>
+      <div class="a-val">→</div>
+    </div>`;
+  window.OPL.openModal("Appel de renfort", html);
+  document.querySelectorAll("[data-warcall]").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      window.OPL.closeModal();
+      if(el.dataset.warcall==="yes"){
+        mpToast("Renfort envoyé !");
+        const out = { type:"war_call_accept", seq: msg.seq };
+        if(mp.isHost) hostHandle(mp.selfId, out);
+        else sendToHost(out);
+      }
+    });
+  });
+}
+
+function applyWarCallResult(msg){
+  if(!pendingWarCallContinuation) return;
+  const fn = pendingWarCallContinuation;
+  pendingWarCallContinuation = null;
+  const helperText = msg.helperNames && msg.helperNames.length ? ` Renfort de : ${msg.helperNames.join(", ")}.` : " Personne n'a pu répondre à temps.";
+  window.OPL.addLog(msg.bonus>0 ? `Le renfort arrive à point nommé !${helperText}` : `Aucun renfort n'arrive...${helperText}`, msg.bonus>0?"good":"neutral");
+  fn(msg.bonus);
+}
+
+function applyWarCallReward(msg){
+  const s = window.OPL.getState();
+  s.beli += msg.amount;
+  window.OPL.addLog(`Tu prêtes main forte à ${msg.forName} dans sa guerre : +${window.OPL.fmt(msg.amount)} Beli de reconnaissance.`, "good");
+  window.OPL.save();
+  window.OPL.renderGame(true);
+}
+
+/* ================= UI : gouvernance d'îles ================= */
+
+function openGovernanceModal(){
+  govModalOpen = true;
+  renderGovernanceModal();
+}
+
+function renderGovernanceModal(){
+  const islands = Object.keys(window.OPL.ISLAND_ICONS);
+  const s = window.OPL.getState();
+  const rows = islands.map(name=>{
+    const gov = mp.governors[name];
+    const icon = window.OPL.ISLAND_ICONS[name] || "🏝️";
+    const isHere = s.island===name;
+    const mine = gov && gov.id===mp.selfId;
+    const statusText = gov ? (mine ? "Toi" : gov.name) : "Libre";
+    const canChallenge = isHere && !mine;
+    return `<div class="mp-lobby-row">
+      <span>${icon} ${name}${isHere?" 📍":""}</span>
+      <span>${statusText}${canChallenge ? ` <button class="btn btn-chip" data-gov-challenge="${name}">Défier</button>` : ""}</span>
+    </div>`;
+  }).join("");
+  window.OPL.openModal("🏝️ Gouvernance des îles", `<div class="mp-lobby-list">${rows}</div>`);
+  document.querySelectorAll("[data-gov-challenge]").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      const island = el.dataset.govChallenge;
+      window.OPL.closeModal();
+      mpToast("Tu tentes ta chance...");
+      const out = { type:"gov_challenge", island };
+      if(mp.isHost) hostHandle(mp.selfId, out);
+      else sendToHost(out);
+    });
+  });
+}
+
+function renderGovernanceIfOpen(){
+  if(!govModalOpen) return;
+  renderGovernanceModal();
+}
+
+function applyGovResult(msg){
+  window.OPL.closeModal();
+  if(msg.outcome==="already"){
+    mpToast("Tu gouvernes déjà cette île.");
+    return;
+  }
+  if(msg.outcome==="won"){
+    const perk = window.OPL.grantIslandRewardPerk();
+    window.OPL.addLog(`Tu prends le contrôle de ${msg.island}${msg.previousGovernorName?` (déchu·e : ${msg.previousGovernorName})`:""} ! ${perk.text}`, "major");
+    window.OPL.save();
+    window.OPL.renderGame(true);
+  } else {
+    mpToast(`Défi perdu pour le contrôle de ${msg.island}.`);
+    const s = window.OPL.getState();
+    const dmg = window.OPL.rand(5,15);
+    s.health = Math.max(0, Math.min(100, s.health - dmg));
+    window.OPL.addLog(`Ta tentative de prise de contrôle de ${msg.island} échoue face à ${msg.governorName || "la résistance locale"} (-${dmg} PV).`, "bad");
+    if(s.alive && s.health<=0) window.OPL.death("battle");
+    window.OPL.save();
+    window.OPL.renderGame(true);
   }
 }
 
@@ -909,10 +1226,14 @@ function deactivateMultiplayer(){
   mp.coopVoteMode = false;
   mp.pendingVotes = {};
   mp.pendingRevivals = {};
+  mp.pendingWarCalls = {};
+  mp.governors = {};
   mp.chatLog = [];
   mp.chatUnread = 0;
   pendingVoteEvent = null;
+  pendingWarCallContinuation = null;
   chatModalOpen = false;
+  govModalOpen = false;
   skipRevivalHook = false;
   try{ if(mp.peer) mp.peer.destroy(); }catch(e){}
   mp.peer = null;
@@ -961,6 +1282,7 @@ function wireHooks(){
   };
   window.OPL._onModalClosed = function(){
     chatModalOpen = false;
+    govModalOpen = false;
   };
   window.OPL._onFinalDeath = function(cause){
     if(skipRevivalHook) return false;
@@ -968,6 +1290,23 @@ function wireHooks(){
     const others = activePlayers().filter(p=>p.id!==mp.selfId);
     if(others.length===0) return false;
     requestRevival(cause);
+    return true;
+  };
+  window.OPL._onWarStart = function(config, continueFn){
+    if(!mp.active) return false;
+    const s = window.OPL.getState();
+    if(s.path!=="marine" && s.path!=="pirate") return false;
+    const eligible = activePlayers().filter(p=>p.id!==mp.selfId && p.path===s.path);
+    if(eligible.length===0) return false;
+    pendingWarCallContinuation = continueFn;
+    const msg = { type:"war_call_request", forId: mp.selfId, forName: s.name, path: s.path, warLabel: config.enemyLabel };
+    if(mp.isHost) hostHandle(mp.selfId, msg);
+    else sendToHost(msg);
+    window.OPL.addLog(s.path==="marine"
+      ? "Tu lances un appel de renfort d'urgence à tes camarades marines connectés..."
+      : "Tu espères qu'un allié pirate connecté viendra te prêter main forte...", "neutral");
+    window.OPL.save();
+    window.OPL.renderGame(true);
     return true;
   };
 }
@@ -987,6 +1326,6 @@ if(document.readyState==="loading"){
 }
 
 // Surface de test (mock du transport réseau) — voir scratchpad/test-mp-logic.js
-window.__OPL_MP_TEST__ = { mp, transport, hostHandle, clientApply, buildSnapshot, mkEmptyPlayer, finalizeRevival };
+window.__OPL_MP_TEST__ = { mp, transport, hostHandle, clientApply, buildSnapshot, mkEmptyPlayer, finalizeRevival, finalizeWarCall, resolveGovChallenge };
 
 })();
