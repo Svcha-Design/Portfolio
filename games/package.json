@@ -1,0 +1,14 @@
+{
+  "name": "mini-games-party",
+  "version": "1.0.0",
+  "description": "Mini-jeux multijoueurs a jouer entre potes, chacun depuis son telephone",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}

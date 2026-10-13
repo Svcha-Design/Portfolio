@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rejoindre — Mini Games</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="screen" id="screen-join">
+    <h1>MINI<span>GAMES</span></h1>
+    <form class="card" id="joinForm">
+      <input type="text" id="roomCodeInput" placeholder="CODE" maxlength="4" autocomplete="off" autocapitalize="characters">
+      <input type="text" id="nameInput" placeholder="Ton prenom" maxlength="20" autocomplete="off">
+      <button type="submit" class="btn">Rejoindre</button>
+      <p class="error-msg" id="joinError"></p>
+    </form>
+  </div>
+
+  <div class="screen hidden" id="screen-waiting">
+    <h1>C'est parti !</h1>
+    <div class="card">
+      <p class="subtitle" id="waitingName"></p>
+      <p class="subtitle">En attente du lancement par l'hote...</p>
+    </div>
+  </div>
+
+  <div class="screen hidden" id="screen-question">
+    <div class="timer-bar-track"><div class="timer-bar-fill" id="timerFill"></div></div>
+    <div class="card">
+      <div class="question-text" id="questionText"></div>
+      <div class="answers-grid" id="answersGrid"></div>
+      <p class="subtitle" id="answerStatus"></p>
+    </div>
+  </div>
+
+  <div class="screen hidden" id="screen-reveal">
+    <div class="status-banner" id="revealBanner"></div>
+    <div class="card">
+      <div class="leaderboard" id="leaderboard"></div>
+    </div>
+  </div>
+
+  <div class="screen hidden" id="screen-end">
+    <h1>Classement final</h1>
+    <div class="card">
+      <div class="leaderboard" id="finalLeaderboard"></div>
+      <a href="player.html" class="btn">Rejoindre une autre partie</a>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="player.js"></script>
+</body>
+</html>

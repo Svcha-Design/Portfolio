@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hote — Mini Games</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="screen" id="screen-lobby">
+    <h1>MINI<span>GAMES</span></h1>
+    <div class="card">
+      <p class="subtitle">Donne ce code a tes potes pour rejoindre :</p>
+      <div class="room-code" id="roomCode">----</div>
+      <p class="subtitle">Ils vont sur <strong>cette adresse / player.html</strong> et entrent le code.</p>
+      <ul class="player-list" id="playerList"></ul>
+      <button class="btn" id="startBtn" disabled>Demarrer la partie</button>
+    </div>
+  </div>
+
+  <div class="screen hidden" id="screen-question">
+    <div class="question-meta">
+      <span id="qIndex"></span>
+      <span id="answerCount"></span>
+    </div>
+    <div class="timer-bar-track"><div class="timer-bar-fill" id="timerFill"></div></div>
+    <div class="card">
+      <div class="question-text" id="questionText"></div>
+      <div class="answers-grid" id="answersGrid"></div>
+    </div>
+  </div>
+
+  <div class="screen hidden" id="screen-reveal">
+    <h1>Reponse</h1>
+    <div class="card">
+      <div class="answers-grid" id="revealGrid"></div>
+      <div class="leaderboard" id="leaderboard"></div>
+      <button class="btn" id="nextBtn">Question suivante</button>
+    </div>
+  </div>
+
+  <div class="screen hidden" id="screen-end">
+    <h1>Classement final</h1>
+    <div class="card">
+      <div class="leaderboard" id="finalLeaderboard"></div>
+      <a href="host.html" class="btn">Nouvelle partie</a>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="host.js"></script>
+</body>
+</html>
